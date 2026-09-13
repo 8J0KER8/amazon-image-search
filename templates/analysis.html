@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        تحليل أسعار Amazon مصر
+    </title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='style.css') }}"
+    >
+
+</head>
+
+
+<body>
+
+
+<header>
+
+    <div class="nav-container">
+
+        <div class="logo">
+            Amazon
+            <span>
+                Image Search
+            </span>
+        </div>
+
+
+        <nav>
+
+            <a href="/">
+                البحث بالصورة
+            </a>
+
+
+            <a
+                href="/analysis"
+                class="active"
+            >
+                تحليل الأسعار
+            </a>
+
+        </nav>
+
+    </div>
+
+</header>
+
+
+<main class="container">
+
+
+    <section class="hero">
+
+        <div class="page-badge">
+            Amazon مصر فقط
+        </div>
+
+        <h1>
+            تحليل أسعار المنتج
+        </h1>
+
+        <p>
+            ارفع صورة المنتج وهنبحث عن أسعاره على Amazon مصر ونرتب العروض من الأرخص للأغلى
+        </p>
+
+    </section>
+
+
+    <section class="upload-card">
+
+        <div
+            id="dropArea"
+            class="drop-area"
+        >
+
+            <div id="uploadPlaceholder">
+
+                <div class="upload-icon">
+                    📊
+                </div>
+
+                <h3>
+                    حط صورة المنتج هنا
+                </h3>
+
+                <p>
+                    اضغط هنا أو اسحب الصورة
+                </p>
+
+                <span>
+                    JPG / PNG / WEBP
+                </span>
+
+            </div>
+
+
+            <img
+                id="preview"
+                class="preview"
+                alt="معاينة الصورة"
+            >
+
+        </div>
+
+
+        <input
+            type="file"
+            id="fileInput"
+            accept="image/jpeg,image/png,image/webp"
+            hidden
+        >
+
+
+        <div class="buttons">
+
+            <button
+                id="analyzeButton"
+                class="primary-button"
+                disabled
+            >
+                حلل الأسعار
+            </button>
+
+
+            <button
+                id="removeButton"
+                class="secondary-button"
+                style="display:none"
+            >
+                شيل الصورة
+            </button>
+
+        </div>
+
+    </section>
+
+
+    <div
+        id="status"
+        class="status"
+    ></div>
+
+
+    <section
+        id="detectedSection"
+        class="detected-product"
+        style="display:none"
+    >
+
+        <span>
+            المنتج اللي بنبحث عنه
+        </span>
+
+        <strong id="detectedQuery"></strong>
+
+    </section>
+
+
+    <section
+        id="statsSection"
+        style="display:none"
+    >
+
+        <div class="stats-grid">
+
+
+            <div class="stat-card">
+
+                <div class="stat-icon">
+                    ↓
+                </div>
+
+                <span>
+                    أقل سعر
+                </span>
+
+                <strong id="minimumPrice">
+                    -
+                </strong>
+
+            </div>
+
+
+            <div class="stat-card highlight">
+
+                <div class="stat-icon">
+                    ≈
+                </div>
+
+                <span>
+                    متوسط السعر
+                </span>
+
+                <strong id="averagePrice">
+                    -
+                </strong>
+
+            </div>
+
+
+            <div class="stat-card">
+
+                <div class="stat-icon">
+                    ↑
+                </div>
+
+                <span>
+                    أعلى سعر
+                </span>
+
+                <strong id="maximumPrice">
+                    -
+                </strong>
+
+            </div>
+
+
+            <div class="stat-card">
+
+                <div class="stat-icon">
+                    #
+                </div>
+
+                <span>
+                    عدد الأسعار
+                </span>
+
+                <strong id="offersCount">
+                    -
+                </strong>
+
+            </div>
+
+
+        </div>
+
+    </section>
+
+
+    <section
+        id="cheapestSection"
+        style="display:none"
+    >
+
+        <div class="section-title">
+
+            <div>
+
+                <h2>
+                    أقل سعر ظاهر
+                </h2>
+
+                <p>
+                    أرخص عرض لقيناه على Amazon مصر
+                </p>
+
+            </div>
+
+        </div>
+
+
+        <div
+            id="cheapestProduct"
+            class="closest-product"
+        ></div>
+
+    </section>
+
+
+    <section
+        id="offersSection"
+        style="display:none"
+    >
+
+        <div class="section-title">
+
+            <div>
+
+                <h2>
+                    أسعار المنافسين
+                </h2>
+
+                <p>
+                    عروض Amazon مصر مرتبة من الأرخص للأغلى
+                </p>
+
+            </div>
+
+
+            <div
+                id="offersResultCount"
+                class="result-count"
+            ></div>
+
+        </div>
+
+
+        <div class="offers-table-wrap">
+
+            <table class="offers-table">
+
+                <thead>
+
+                    <tr>
+
+                        <th>
+                            #
+                        </th>
+
+                        <th>
+                            المنتج
+                        </th>
+
+                        <th>
+                            السعر
+                        </th>
+
+                        <th>
+                            السعر القديم
+                        </th>
+
+                        <th>
+                            التقييم
+                        </th>
+
+                        <th>
+                            Prime
+                        </th>
+
+                        <th></th>
+
+                    </tr>
+
+                </thead>
+
+
+                <tbody id="offersTableBody">
+                </tbody>
+
+            </table>
+
+        </div>
+
+    </section>
+
+
+</main>
+
+
+<script>
+
+const dropArea =
+    document.getElementById("dropArea");
+
+const fileInput =
+    document.getElementById("fileInput");
+
+const preview =
+    document.getElementById("preview");
+
+const uploadPlaceholder =
+    document.getElementById("uploadPlaceholder");
+
+const analyzeButton =
+    document.getElementById("analyzeButton");
+
+const removeButton =
+    document.getElementById("removeButton");
+
+const statusBox =
+    document.getElementById("status");
+
+const detectedSection =
+    document.getElementById("detectedSection");
+
+const detectedQuery =
+    document.getElementById("detectedQuery");
+
+const statsSection =
+    document.getElementById("statsSection");
+
+const cheapestSection =
+    document.getElementById("cheapestSection");
+
+const cheapestProduct =
+    document.getElementById("cheapestProduct");
+
+const offersSection =
+    document.getElementById("offersSection");
+
+const offersTableBody =
+    document.getElementById("offersTableBody");
+
+const offersResultCount =
+    document.getElementById("offersResultCount");
+
+
+let selectedFile = null;
+
+
+/* =========================================
+   Image
+========================================= */
+
+dropArea.addEventListener(
+    "click",
+    () => {
+
+        fileInput.click();
+
+    }
+);
+
+
+fileInput.addEventListener(
+    "change",
+    () => {
+
+        if (
+            fileInput.files.length > 0
+        ) {
+
+            setFile(
+                fileInput.files[0]
+            );
+
+        }
+
+    }
+);
+
+
+dropArea.addEventListener(
+    "dragover",
+    event => {
+
+        event.preventDefault();
+
+        dropArea.classList.add(
+            "dragover"
+        );
+
+    }
+);
+
+
+dropArea.addEventListener(
+    "dragleave",
+    () => {
+
+        dropArea.classList.remove(
+            "dragover"
+        );
+
+    }
+);
+
+
+dropArea.addEventListener(
+    "drop",
+    event => {
+
+        event.preventDefault();
+
+        dropArea.classList.remove(
+            "dragover"
+        );
+
+
+        if (
+            event.dataTransfer.files.length > 0
+        ) {
+
+            setFile(
+                event.dataTransfer.files[0]
+            );
+
+        }
+
+    }
+);
+
+
+function setFile(file) {
+
+    if (
+        !file.type.startsWith(
+            "image/"
+        )
+    ) {
+
+        showError(
+            "اختار صورة صحيحة."
+        );
+
+        return;
+    }
+
+
+    selectedFile = file;
+
+
+    const reader =
+        new FileReader();
+
+
+    reader.onload = event => {
+
+        preview.src =
+            event.target.result;
+
+        preview.style.display =
+            "block";
+
+        uploadPlaceholder.style.display =
+            "none";
+
+    };
+
+
+    reader.readAsDataURL(
+        file
+    );
+
+
+    analyzeButton.disabled =
+        false;
+
+
+    removeButton.style.display =
+        "inline-block";
+
+
+    clearResults();
+
+}
+
+
+/* =========================================
+   Remove
+========================================= */
+
+removeButton.addEventListener(
+    "click",
+    event => {
+
+        event.stopPropagation();
+
+
+        selectedFile = null;
+
+        fileInput.value = "";
+
+        preview.src = "";
+
+        preview.style.display =
+            "none";
+
+        uploadPlaceholder.style.display =
+            "block";
+
+        analyzeButton.disabled =
+            true;
+
+        removeButton.style.display =
+            "none";
+
+        clearResults();
+
+    }
+);
+
+
+/* =========================================
+   Analyze
+========================================= */
+
+analyzeButton.addEventListener(
+    "click",
+    async () => {
+
+        if (!selectedFile) {
+            return;
+        }
+
+
+        clearResults();
+
+
+        analyzeButton.disabled =
+            true;
+
+
+        statusBox.innerHTML = `
+
+            <div class="loading-box">
+
+                <div class="loader"></div>
+
+                <strong>
+                    بنحلل أسعار المنتج...
+                </strong>
+
+                <span>
+                    بندور على الأسعار الظاهرة على Amazon مصر
+                </span>
+
+            </div>
+
+        `;
+
+
+        const formData =
+            new FormData();
+
+
+        formData.append(
+            "image",
+            selectedFile
+        );
+
+
+        try {
+
+            const response =
+                await fetch(
+                    "/api/analyze",
+                    {
+                        method: "POST",
+                        body: formData
+                    }
+                );
+
+
+            const data =
+                await response.json();
+
+
+            if (
+                !response.ok
+                || !data.success
+            ) {
+
+                throw new Error(
+                    data.error
+                    || "حصلت مشكلة أثناء تحليل الأسعار."
+                );
+
+            }
+
+
+            statusBox.innerHTML =
+                "";
+
+
+            if (data.query) {
+
+                detectedQuery.textContent =
+                    data.query;
+
+                detectedSection.style.display =
+                    "flex";
+
+            }
+
+
+            if (
+                !data.analysis_available
+            ) {
+
+                statusBox.innerHTML = `
+
+                    <div class="warning-box">
+
+                        <strong>
+                            ملقيناش أسعار
+                        </strong>
+
+                        <p>
+                            ${escapeHTML(
+                                data.message
+                                || "دورنا وملاقيناش أي أسعار ظاهرة للمنتج ده."
+                            )}
+                        </p>
+
+                    </div>
+
+                `;
+
+                return;
+            }
+
+
+            renderAnalysis(
+                data
+            );
+
+        }
+
+        catch (error) {
+
+            showError(
+                error.message
+            );
+
+        }
+
+        finally {
+
+            analyzeButton.disabled =
+                false;
+
+        }
+
+    }
+);
+
+
+/* =========================================
+   Analysis
+========================================= */
+
+function renderAnalysis(data) {
+
+    document.getElementById(
+        "minimumPrice"
+    ).textContent =
+        data.stats.minimum;
+
+
+    document.getElementById(
+        "averagePrice"
+    ).textContent =
+        data.stats.average;
+
+
+    document.getElementById(
+        "maximumPrice"
+    ).textContent =
+        data.stats.maximum;
+
+
+    document.getElementById(
+        "offersCount"
+    ).textContent =
+        data.count;
+
+
+    statsSection.style.display =
+        "block";
+
+
+    if (data.closest) {
+
+        renderCheapest(
+            data.closest
+        );
+
+        cheapestSection.style.display =
+            "block";
+
+    }
+
+
+    renderOffers(
+        data.results || []
+    );
+
+
+    offersSection.style.display =
+        "block";
+
+
+    offersResultCount.textContent =
+        `${data.count} عرض`;
+
+}
+
+
+/* =========================================
+   Cheapest
+========================================= */
+
+function renderCheapest(product) {
+
+    cheapestProduct.innerHTML = `
+
+        <div class="closest-image-wrap">
+
+            ${
+                product.thumbnail
+
+                ? `
+                    <img
+                        src="${escapeAttribute(product.thumbnail)}"
+                        alt=""
+                    >
+                `
+
+                : `
+                    <div class="no-image">
+                        مفيش صورة متاحة
+                    </div>
+                `
+            }
+
+        </div>
+
+
+        <div class="closest-info">
+
+            <span class="cheapest-badge">
+                أقل سعر
+            </span>
+
+
+            ${
+                product.prime
+
+                ? `
+                    <span class="prime-label">
+                        Prime
+                    </span>
+                `
+
+                : ""
+            }
+
+
+            <h3>
+
+                ${escapeHTML(
+                    product.title
+                )}
+
+            </h3>
+
+
+            <div class="closest-price">
+
+                ${escapeHTML(
+                    product.price
+                )}
+
+            </div>
+
+
+            ${
+                product.old_price
+
+                ? `
+                    <div class="closest-old-price">
+                        ${escapeHTML(product.old_price)}
+                    </div>
+                `
+
+                : ""
+            }
+
+
+            ${
+                product.rating
+
+                ? `
+                    <div class="rating">
+
+                        ⭐
+                        ${escapeHTML(product.rating)}
+
+                        ${
+                            product.reviews
+
+                            ? `
+                                <span>
+                                    (${formatNumber(product.reviews)})
+                                </span>
+                            `
+
+                            : ""
+                        }
+
+                    </div>
+                `
+
+                : ""
+            }
+
+
+            <a
+                href="${escapeAttribute(product.link)}"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="amazon-button inline-button"
+            >
+
+                افتح العرض على Amazon مصر
+
+            </a>
+
+        </div>
+
+    `;
+
+}
+
+
+/* =========================================
+   Offers
+========================================= */
+
+function renderOffers(products) {
+
+    offersTableBody.innerHTML =
+        "";
+
+
+    products.forEach(
+        (product, index) => {
+
+            const row =
+                document.createElement(
+                    "tr"
+                );
+
+
+            row.innerHTML = `
+
+                <td>
+
+                    <div class="table-rank">
+
+                        ${index + 1}
+
+                    </div>
+
+                </td>
+
+
+                <td>
+
+                    <div class="table-product">
+
+                        ${
+                            product.thumbnail
+
+                            ? `
+                                <img
+                                    src="${escapeAttribute(product.thumbnail)}"
+                                    alt=""
+                                    loading="lazy"
+                                >
+                            `
+
+                            : ""
+                        }
+
+
+                        <span>
+
+                            ${escapeHTML(
+                                product.title
+                            )}
+
+                        </span>
+
+                    </div>
+
+                </td>
+
+
+                <td>
+
+                    <strong class="table-price">
+
+                        ${escapeHTML(
+                            product.price
+                        )}
+
+                    </strong>
+
+                </td>
+
+
+                <td>
+
+                    ${
+                        product.old_price
+
+                        ? `
+                            <span class="table-old-price">
+                                ${escapeHTML(product.old_price)}
+                            </span>
+                        `
+
+                        : "-"
+                    }
+
+                </td>
+
+
+                <td>
+
+                    ${
+                        product.rating
+
+                        ? `
+                            ⭐
+                            ${escapeHTML(product.rating)}
+                        `
+
+                        : "-"
+                    }
+
+                </td>
+
+
+                <td>
+
+                    ${
+                        product.prime
+
+                        ? `
+                            <span class="prime-label">
+                                Prime
+                            </span>
+                        `
+
+                        : "-"
+                    }
+
+                </td>
+
+
+                <td>
+
+                    <a
+                        href="${escapeAttribute(product.link)}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="small-amazon-button"
+                    >
+
+                        فتح
+
+                    </a>
+
+                </td>
+
+            `;
+
+
+            offersTableBody.appendChild(
+                row
+            );
+
+        }
+    );
+
+}
+
+
+/* =========================================
+   Helpers
+========================================= */
+
+function clearResults() {
+
+    statusBox.innerHTML =
+        "";
+
+    detectedSection.style.display =
+        "none";
+
+    detectedQuery.textContent =
+        "";
+
+    statsSection.style.display =
+        "none";
+
+    cheapestSection.style.display =
+        "none";
+
+    offersSection.style.display =
+        "none";
+
+    cheapestProduct.innerHTML =
+        "";
+
+    offersTableBody.innerHTML =
+        "";
+
+    offersResultCount.textContent =
+        "";
+
+}
+
+
+function showError(message) {
+
+    statusBox.innerHTML = `
+
+        <div class="error-box">
+
+            ${escapeHTML(
+                message
+            )}
+
+        </div>
+
+    `;
+
+}
+
+
+function escapeHTML(value) {
+
+    const div =
+        document.createElement(
+            "div"
+        );
+
+
+    div.textContent =
+        value === null
+        || value === undefined
+        ? ""
+        : String(value);
+
+
+    return div.innerHTML;
+
+}
+
+
+function escapeAttribute(value) {
+
+    return String(
+        value || ""
+    )
+
+    .replaceAll(
+        "&",
+        "&amp;"
+    )
+
+    .replaceAll(
+        '"',
+        "&quot;"
+    )
+
+    .replaceAll(
+        "<",
+        "&lt;"
+    )
+
+    .replaceAll(
+        ">",
+        "&gt;"
+    );
+
+}
+
+
+function formatNumber(value) {
+
+    return new Intl.NumberFormat(
+        "ar-EG"
+    ).format(
+        value
+    );
+
+}
+
+</script>
+
+
+</body>
+</html>

@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        البحث بالصورة
+    </title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='style.css') }}"
+    >
+</head>
+
+<body>
+
+<header>
+
+    <div class="nav-container">
+
+        <div class="logo">
+            Amazon
+            <span>
+                Image Search
+            </span>
+        </div>
+
+        <nav>
+
+            <a
+                href="/"
+                class="active"
+            >
+                البحث بالصورة
+            </a>
+
+            <a href="/analysis">
+                تحليل الأسعار
+            </a>
+
+        </nav>
+
+    </div>
+
+</header>
+
+
+<main class="container">
+
+    <section class="hero">
+
+        <div class="page-badge">
+            Google Lens
+        </div>
+
+        <h1>
+            دور على المنتج بالصورة
+        </h1>
+
+        <p>
+            ارفع صورة المنتج وهنجيبلك الصور والنتائج الأقرب ليه من المتاجر والمواقع المختلفة
+        </p>
+
+    </section>
+
+
+    <section class="upload-card">
+
+        <div
+            id="dropArea"
+            class="drop-area"
+        >
+
+            <div id="uploadPlaceholder">
+
+                <div class="upload-icon">
+                    📷
+                </div>
+
+                <h3>
+                    حط صورة المنتج هنا
+                </h3>
+
+                <p>
+                    اضغط هنا أو اسحب الصورة
+                </p>
+
+                <span>
+                    JPG / PNG / WEBP
+                </span>
+
+            </div>
+
+
+            <img
+                id="preview"
+                class="preview"
+                alt="معاينة الصورة"
+            >
+
+        </div>
+
+
+        <input
+            type="file"
+            id="fileInput"
+            accept="image/jpeg,image/png,image/webp"
+            hidden
+        >
+
+
+        <div class="buttons">
+
+            <button
+                id="searchButton"
+                class="primary-button"
+                disabled
+            >
+                دور بالصورة
+            </button>
+
+
+            <button
+                id="removeButton"
+                class="secondary-button"
+                style="display:none"
+            >
+                شيل الصورة
+            </button>
+
+        </div>
+
+    </section>
+
+
+    <div
+        id="status"
+        class="status"
+    ></div>
+
+
+    <section
+        id="resultsSection"
+        style="display:none"
+    >
+
+        <div class="section-title">
+
+            <div>
+
+                <h2>
+                    النتائج الأقرب للصورة
+                </h2>
+
+                <p>
+                    نتائج Google Lens من المتاجر والمواقع المختلفة
+                </p>
+
+            </div>
+
+            <div
+                id="resultCount"
+                class="result-count"
+            ></div>
+
+        </div>
+
+
+        <div
+            id="results"
+            class="products-grid"
+        ></div>
+
+    </section>
+
+</main>
+
+
+<script>
+
+const dropArea =
+    document.getElementById("dropArea");
+
+const fileInput =
+    document.getElementById("fileInput");
+
+const preview =
+    document.getElementById("preview");
+
+const uploadPlaceholder =
+    document.getElementById("uploadPlaceholder");
+
+const searchButton =
+    document.getElementById("searchButton");
+
+const removeButton =
+    document.getElementById("removeButton");
+
+const statusBox =
+    document.getElementById("status");
+
+const resultsSection =
+    document.getElementById("resultsSection");
+
+const resultCount =
+    document.getElementById("resultCount");
+
+const results =
+    document.getElementById("results");
+
+
+let selectedFile = null;
+
+
+/* =========================================
+   اختيار الصورة
+========================================= */
+
+dropArea.addEventListener(
+    "click",
+    () => {
+        fileInput.click();
+    }
+);
+
+
+fileInput.addEventListener(
+    "change",
+    () => {
+
+        if (
+            fileInput.files.length > 0
+        ) {
+
+            setFile(
+                fileInput.files[0]
+            );
+
+        }
+
+    }
+);
+
+
+dropArea.addEventListener(
+    "dragover",
+    event => {
+
+        event.preventDefault();
+
+        dropArea.classList.add(
+            "dragover"
+        );
+
+    }
+);
+
+
+dropArea.addEventListener(
+    "dragleave",
+    () => {
+
+        dropArea.classList.remove(
+            "dragover"
+        );
+
+    }
+);
+
+
+dropArea.addEventListener(
+    "drop",
+    event => {
+
+        event.preventDefault();
+
+        dropArea.classList.remove(
+            "dragover"
+        );
+
+
+        if (
+            event.dataTransfer.files.length > 0
+        ) {
+
+            setFile(
+                event.dataTransfer.files[0]
+            );
+
+        }
+
+    }
+);
+
+
+function setFile(file) {
+
+    if (
+        !file.type.startsWith(
+            "image/"
+        )
+    ) {
+
+        showError(
+            "اختار صورة صحيحة."
+        );
+
+        return;
+    }
+
+
+    selectedFile = file;
+
+
+    const reader =
+        new FileReader();
+
+
+    reader.onload = event => {
+
+        preview.src =
+            event.target.result;
+
+        preview.style.display =
+            "block";
+
+        uploadPlaceholder.style.display =
+            "none";
+
+    };
+
+
+    reader.readAsDataURL(
+        file
+    );
+
+
+    searchButton.disabled =
+        false;
+
+
+    removeButton.style.display =
+        "inline-block";
+
+
+    clearResults();
+
+}
+
+
+/* =========================================
+   حذف الصورة
+========================================= */
+
+removeButton.addEventListener(
+    "click",
+    event => {
+
+        event.stopPropagation();
+
+        selectedFile = null;
+
+        fileInput.value = "";
+
+        preview.src = "";
+
+        preview.style.display =
+            "none";
+
+        uploadPlaceholder.style.display =
+            "block";
+
+        searchButton.disabled =
+            true;
+
+        removeButton.style.display =
+            "none";
+
+        clearResults();
+
+    }
+);
+
+
+/* =========================================
+   البحث
+========================================= */
+
+searchButton.addEventListener(
+    "click",
+    async () => {
+
+        if (!selectedFile) {
+            return;
+        }
+
+
+        clearResults();
+
+
+        searchButton.disabled =
+            true;
+
+
+        statusBox.innerHTML = `
+
+            <div class="loading-box">
+
+                <div class="loader"></div>
+
+                <strong>
+                    Google Lens بيحلل الصورة...
+                </strong>
+
+                <span>
+                    بندور على الصور والنتائج الأقرب للمنتج
+                </span>
+
+            </div>
+
+        `;
+
+
+        const formData =
+            new FormData();
+
+
+        formData.append(
+            "image",
+            selectedFile
+        );
+
+
+        try {
+
+            const response =
+                await fetch(
+                    "/api/search",
+                    {
+                        method: "POST",
+                        body: formData
+                    }
+                );
+
+
+            const data =
+                await response.json();
+
+
+            if (
+                !response.ok
+                || !data.success
+            ) {
+
+                throw new Error(
+                    data.error
+                    || "حصلت مشكلة أثناء البحث."
+                );
+
+            }
+
+
+            statusBox.innerHTML =
+                "";
+
+
+            renderProducts(
+                data.results || [],
+                data.message || ""
+            );
+
+        }
+
+        catch (error) {
+
+            showError(
+                error.message
+            );
+
+        }
+
+        finally {
+
+            searchButton.disabled =
+                false;
+
+        }
+
+    }
+);
+
+
+/* =========================================
+   عرض النتائج
+========================================= */
+
+function renderProducts(
+    products,
+    message
+) {
+
+    results.innerHTML =
+        "";
+
+
+    resultsSection.style.display =
+        "block";
+
+
+    resultCount.textContent =
+        `${products.length} نتيجة`;
+
+
+    if (!products.length) {
+
+        results.innerHTML = `
+
+            <div class="empty-box">
+
+                <div class="empty-icon">
+                    🔍
+                </div>
+
+                <h3>
+                    ملقيناش صور للمنتج
+                </h3>
+
+                <p>
+                    ${
+                        escapeHTML(
+                            message
+                            || "دورنا وملاقيناش صور للمنتج ده في أي متجر."
+                        )
+                    }
+                </p>
+
+            </div>
+
+        `;
+
+        return;
+    }
+
+
+    products.forEach(
+        product => {
+
+            const card =
+                document.createElement(
+                    "article"
+                );
+
+
+            card.className =
+                "product-card";
+
+
+            const source =
+                product.source
+                || product.domain
+                || "موقع خارجي";
+
+
+            card.innerHTML = `
+
+                <div class="product-image-wrap">
+
+                    ${
+                        product.thumbnail
+
+                        ? `
+                            <img
+                                src="${escapeAttribute(product.thumbnail)}"
+                                class="product-image"
+                                loading="lazy"
+                                alt=""
+                            >
+                        `
+
+                        : `
+                            <div class="no-image">
+                                مفيش صورة متاحة
+                            </div>
+                        `
+                    }
+
+                </div>
+
+
+                <div class="product-body">
+
+
+                    <div class="product-badges">
+
+                        <span class="rank-badge">
+
+                            نتيجة رقم
+                            ${escapeHTML(product.rank)}
+
+                        </span>
+
+
+                        <span class="source-badge">
+
+                            ${escapeHTML(source)}
+
+                        </span>
+
+                    </div>
+
+
+                    <h3 class="product-title">
+
+                        ${escapeHTML(
+                            product.title
+                        )}
+
+                    </h3>
+
+
+                    ${
+                        product.price
+
+                        ? `
+                            <div class="product-price external-price">
+
+                                ${escapeHTML(
+                                    product.price
+                                )}
+
+                                ${
+                                    product.currency
+
+                                    ? `
+                                        <small>
+                                            ${escapeHTML(product.currency)}
+                                        </small>
+                                    `
+
+                                    : ""
+                                }
+
+                            </div>
+                        `
+
+                        : ""
+                    }
+
+
+                    ${
+                        product.rating
+
+                        ? `
+                            <div class="rating">
+
+                                ⭐
+                                ${escapeHTML(product.rating)}
+
+                                ${
+                                    product.reviews
+
+                                    ? `
+                                        <span>
+                                            (${formatNumber(product.reviews)})
+                                        </span>
+                                    `
+
+                                    : ""
+                                }
+
+                            </div>
+                        `
+
+                        : ""
+                    }
+
+
+                    ${
+                        product.link
+
+                        ? `
+                            <a
+                                href="${escapeAttribute(product.link)}"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="result-button"
+                            >
+
+                                افتح النتيجة
+
+                            </a>
+                        `
+
+                        : `
+                            <div class="result-button disabled-link">
+                                الرابط غير متاح
+                            </div>
+                        `
+                    }
+
+                </div>
+
+            `;
+
+
+            results.appendChild(
+                card
+            );
+
+        }
+    );
+
+}
+
+
+/* =========================================
+   Helpers
+========================================= */
+
+function clearResults() {
+
+    statusBox.innerHTML =
+        "";
+
+    results.innerHTML =
+        "";
+
+    resultsSection.style.display =
+        "none";
+
+    resultCount.textContent =
+        "";
+
+}
+
+
+function showError(message) {
+
+    statusBox.innerHTML = `
+
+        <div class="error-box">
+
+            ${escapeHTML(
+                message
+            )}
+
+        </div>
+
+    `;
+
+}
+
+
+function escapeHTML(value) {
+
+    const div =
+        document.createElement(
+            "div"
+        );
+
+
+    div.textContent =
+        value === null
+        || value === undefined
+        ? ""
+        : String(value);
+
+
+    return div.innerHTML;
+
+}
+
+
+function escapeAttribute(value) {
+
+    return String(
+        value || ""
+    )
+
+    .replaceAll(
+        "&",
+        "&amp;"
+    )
+
+    .replaceAll(
+        '"',
+        "&quot;"
+    )
+
+    .replaceAll(
+        "<",
+        "&lt;"
+    )
+
+    .replaceAll(
+        ">",
+        "&gt;"
+    );
+
+}
+
+
+function formatNumber(value) {
+
+    return new Intl.NumberFormat(
+        "ar-EG"
+    ).format(
+        value
+    );
+
+}
+
+</script>
+
+</body>
+</html>

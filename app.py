@@ -1,0 +1,1497 @@
+import os
+import re
+import statistics
+import tempfile
+
+from io import BytesIO
+from urllib.parse import urlparse
+
+import requests
+from PIL import Image, ImageOps
+from flask import Flask, jsonify, render_template, request
+
+
+app = Flask(__name__)
+
+app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
+
+
+# =========================================================
+# SERPAPI
+# =========================================================
+
+# المفتاح مش بيتكتب هنا.
+# على Render هنضيف Environment Variable اسمه SERPAPI_KEY
+SERPAPI_KEY = os.getenv(
+    "SERPAPI_KEY",
+    ""
+).strip()
+
+
+SERPAPI_IMAGE_URL = "https://serpapi.com/image"
+SERPAPI_SEARCH_URL = "https://serpapi.com/search.json"
+
+
+ALLOWED_EXTENSIONS = {
+    "jpg",
+    "jpeg",
+    "png",
+    "webp"
+}
+
+
+# =========================================================
+# IMAGE
+# =========================================================
+
+def allowed_file(filename):
+
+    return (
+        "."
+        in filename
+        and filename.rsplit(".", 1)[1].lower()
+        in ALLOWED_EXTENSIONS
+    )
+
+
+def prepare_image(file_storage):
+
+    image = Image.open(
+        file_storage.stream
+    )
+
+    image = ImageOps.exif_transpose(
+        image
+    )
+
+    if image.mode in ("RGBA", "LA"):
+
+        background = Image.new(
+            "RGB",
+            image.size,
+            "white"
+        )
+
+        alpha = image.getchannel("A")
+
+        background.paste(
+            image.convert("RGB"),
+            mask=alpha
+        )
+
+        image = background
+
+    else:
+
+        image = image.convert(
+            "RGB"
+        )
+
+    image.thumbnail(
+        (1600, 1600),
+        Image.Resampling.LANCZOS
+    )
+
+    quality = 90
+
+    while True:
+
+        buffer = BytesIO()
+
+        image.save(
+            buffer,
+            format="JPEG",
+            quality=quality,
+            optimize=True
+        )
+
+        if buffer.tell() <= 480 * 1024:
+            break
+
+        if quality > 45:
+
+            quality -= 10
+
+        else:
+
+            new_width = int(
+                image.width * 0.85
+            )
+
+            new_height = int(
+                image.height * 0.85
+            )
+
+            if (
+                new_width < 300
+                or new_height < 300
+            ):
+                break
+
+            image = image.resize(
+                (
+                    new_width,
+                    new_height
+                ),
+                Image.Resampling.LANCZOS
+            )
+
+            quality = 75
+
+    temp_file = tempfile.NamedTemporaryFile(
+        suffix=".jpg",
+        delete=False
+    )
+
+    temp_file.write(
+        buffer.getvalue()
+    )
+
+    temp_file.close()
+
+    return temp_file.name
+
+
+# =========================================================
+# IMAGE UPLOAD
+# =========================================================
+
+def upload_image_to_serpapi(image_path):
+
+    with open(
+        image_path,
+        "rb"
+    ) as image_file:
+
+        response = requests.post(
+            SERPAPI_IMAGE_URL,
+
+            files={
+                "image": (
+                    "image.jpg",
+                    image_file,
+                    "image/jpeg"
+                )
+            },
+
+            data={
+                "api_key": SERPAPI_KEY
+            },
+
+            timeout=60
+        )
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    if data.get("error"):
+
+        raise Exception(
+            data["error"]
+        )
+
+    image_id = data.get(
+        "image_id"
+    )
+
+    if not image_id:
+
+        raise Exception(
+            "حصلت مشكلة أثناء رفع الصورة."
+        )
+
+    return image_id
+
+
+# =========================================================
+# GOOGLE LENS
+# =========================================================
+
+def google_lens(
+    image_id,
+    search_type="visual_matches",
+    country=None
+):
+
+    params = {
+        "engine": "google_lens",
+        "image_id": image_id,
+        "type": search_type,
+        "hl": "en",
+        "safe": "active",
+        "api_key": SERPAPI_KEY,
+    }
+
+    if country:
+
+        params["country"] = country
+
+    response = requests.get(
+        SERPAPI_SEARCH_URL,
+        params=params,
+        timeout=90
+    )
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    if data.get("error"):
+
+        raise Exception(
+            data["error"]
+        )
+
+    return data
+
+
+# =========================================================
+# TEXT
+# =========================================================
+
+def clean_text(text):
+
+    if text is None:
+        return ""
+
+    text = str(text)
+
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    )
+
+    return text.strip()
+
+
+def clean_product_title(title):
+
+    title = clean_text(
+        title
+    )
+
+    title = re.sub(
+        r"\s*[-|–—]\s*(amazon|walmart|ebay|jumia|noon).*?$",
+        "",
+        title,
+        flags=re.IGNORECASE
+    )
+
+    return title.strip()
+
+
+# =========================================================
+# DOMAIN
+# =========================================================
+
+def get_domain(link):
+
+    if not link:
+        return ""
+
+    try:
+
+        domain = urlparse(
+            link
+        ).netloc.lower()
+
+        return domain.replace(
+            "www.",
+            ""
+        )
+
+    except Exception:
+
+        return ""
+
+
+def is_amazon_egypt(link):
+
+    domain = get_domain(
+        link
+    )
+
+    return (
+        domain == "amazon.eg"
+        or domain.endswith(
+            ".amazon.eg"
+        )
+    )
+
+
+# =========================================================
+# PRICE
+# =========================================================
+
+def convert_arabic_numbers(text):
+
+    translation = str.maketrans({
+        "٠": "0",
+        "١": "1",
+        "٢": "2",
+        "٣": "3",
+        "٤": "4",
+        "٥": "5",
+        "٦": "6",
+        "٧": "7",
+        "٨": "8",
+        "٩": "9",
+        "٫": ".",
+        "٬": ",",
+    })
+
+    return str(text).translate(
+        translation
+    )
+
+
+def price_to_text(value):
+
+    if value is None:
+        return ""
+
+    if isinstance(
+        value,
+        str
+    ):
+        return value
+
+    if isinstance(
+        value,
+        (int, float)
+    ):
+        return str(value)
+
+    if isinstance(
+        value,
+        dict
+    ):
+
+        for key in [
+            "value",
+            "raw",
+            "price",
+            "amount",
+            "extracted_value",
+        ]:
+
+            if key in value:
+
+                result = price_to_text(
+                    value[key]
+                )
+
+                if result:
+                    return result
+
+    return ""
+
+
+def parse_price(value):
+
+    if isinstance(
+        value,
+        dict
+    ):
+
+        extracted = value.get(
+            "extracted_value"
+        )
+
+        if isinstance(
+            extracted,
+            (int, float)
+        ):
+
+            return float(
+                extracted
+            )
+
+    text = price_to_text(
+        value
+    )
+
+    if not text:
+        return None
+
+    text = convert_arabic_numbers(
+        text
+    )
+
+    matches = re.findall(
+        r"\d+(?:,\d{3})*(?:\.\d+)?",
+        text
+    )
+
+    if not matches:
+        return None
+
+    try:
+
+        return float(
+            matches[0].replace(
+                ",",
+                ""
+            )
+        )
+
+    except ValueError:
+
+        return None
+
+
+def extract_amazon_price(item):
+
+    for field in [
+        "extracted_price",
+        "extracted_primary_price",
+        "extracted_secondary_price",
+    ]:
+
+        value = item.get(
+            field
+        )
+
+        if isinstance(
+            value,
+            (int, float)
+        ):
+
+            if value > 0:
+
+                return float(
+                    value
+                )
+
+    for field in [
+        "price",
+        "primary_price",
+        "secondary_price",
+    ]:
+
+        value = parse_price(
+            item.get(
+                field
+            )
+        )
+
+        if value and value > 0:
+
+            return value
+
+    return None
+
+
+def format_egp(price):
+
+    if price is None:
+
+        return "السعر غير متاح"
+
+    price = float(
+        price
+    )
+
+    if price.is_integer():
+
+        return (
+            f"{price:,.0f} ج.م"
+        )
+
+    return (
+        f"{price:,.2f} ج.م"
+    )
+
+
+# =========================================================
+# IMAGE SEARCH PAGE
+# =========================================================
+
+def get_visual_results(
+    lens_data
+):
+
+    visual_matches = lens_data.get(
+        "visual_matches",
+        []
+    )
+
+    if not isinstance(
+        visual_matches,
+        list
+    ):
+
+        return []
+
+    results = []
+
+    seen_links = set()
+
+    for item in visual_matches:
+
+        link = clean_text(
+            item.get(
+                "link",
+                ""
+            )
+        )
+
+        thumbnail = (
+            item.get(
+                "thumbnail"
+            )
+            or item.get(
+                "image"
+            )
+            or ""
+        )
+
+        # البحث بالصورة محتاج صورة فعلًا
+        if not thumbnail:
+
+            continue
+
+        clean_link = (
+            link.split("?")[0]
+            if link
+            else ""
+        )
+
+        if (
+            clean_link
+            and clean_link in seen_links
+        ):
+
+            continue
+
+        if clean_link:
+
+            seen_links.add(
+                clean_link
+            )
+
+        raw_price = item.get(
+            "price"
+        )
+
+        price_value = parse_price(
+            raw_price
+        )
+
+        currency = ""
+
+        if isinstance(
+            raw_price,
+            dict
+        ):
+
+            currency = clean_text(
+                raw_price.get(
+                    "currency",
+                    ""
+                )
+            )
+
+        results.append({
+
+            "rank": (
+                item.get(
+                    "position"
+                )
+                or len(results) + 1
+            ),
+
+            "title": (
+                clean_text(
+                    item.get(
+                        "title"
+                    )
+                )
+                or "نتيجة مشابهة للصورة"
+            ),
+
+            "link": link,
+
+            "thumbnail": thumbnail,
+
+            "image": (
+                item.get(
+                    "image"
+                )
+                or thumbnail
+            ),
+
+            "source": (
+                clean_text(
+                    item.get(
+                        "source"
+                    )
+                )
+                or get_domain(
+                    link
+                )
+                or "موقع خارجي"
+            ),
+
+            "domain": get_domain(
+                link
+            ),
+
+            "price_value":
+                price_value,
+
+            "price": (
+                price_to_text(
+                    raw_price
+                )
+                if raw_price
+                else ""
+            ),
+
+            "currency":
+                currency,
+
+            "rating":
+                item.get(
+                    "rating"
+                ),
+
+            "reviews":
+                item.get(
+                    "reviews"
+                ),
+
+        })
+
+    return results
+
+
+# =========================================================
+# GET PRODUCT NAME FOR PRICE PAGE
+# =========================================================
+
+def find_product_query(
+    lens_data
+):
+
+    visual_matches = lens_data.get(
+        "visual_matches",
+        []
+    )
+
+    if isinstance(
+        visual_matches,
+        list
+    ):
+
+        for item in visual_matches:
+
+            title = clean_product_title(
+                item.get(
+                    "title",
+                    ""
+                )
+            )
+
+            if len(title) >= 4:
+
+                return title
+
+
+    related = lens_data.get(
+        "related_content",
+        []
+    )
+
+    if isinstance(
+        related,
+        list
+    ):
+
+        for item in related:
+
+            query = clean_text(
+                item.get(
+                    "query",
+                    ""
+                )
+            )
+
+            if len(query) >= 4:
+
+                return query
+
+
+    return ""
+
+
+# =========================================================
+# AMAZON EGYPT SEARCH
+# =========================================================
+
+def amazon_egypt_search(
+    query,
+    page=1
+):
+
+    response = requests.get(
+        SERPAPI_SEARCH_URL,
+
+        params={
+            "engine":
+                "amazon",
+
+            "amazon_domain":
+                "amazon.eg",
+
+            "k":
+                query,
+
+            "page":
+                page,
+
+            "device":
+                "desktop",
+
+            "api_key":
+                SERPAPI_KEY,
+        },
+
+        timeout=90
+    )
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    if data.get(
+        "error"
+    ):
+
+        raise Exception(
+            data["error"]
+        )
+
+    return data
+
+
+def parse_amazon_price_results(
+    amazon_data
+):
+
+    results = []
+
+    organic_results = amazon_data.get(
+        "organic_results",
+        []
+    )
+
+    if not isinstance(
+        organic_results,
+        list
+    ):
+
+        return []
+
+    for item in organic_results:
+
+        title = clean_text(
+            item.get(
+                "title",
+                ""
+            )
+        )
+
+        if not title:
+            continue
+
+        asin = clean_text(
+            item.get(
+                "asin",
+                ""
+            )
+        )
+
+        link = (
+            item.get(
+                "link_clean"
+            )
+            or item.get(
+                "link"
+            )
+            or ""
+        )
+
+        if (
+            not link
+            and asin
+        ):
+
+            link = (
+                f"https://www.amazon.eg/dp/{asin}"
+            )
+
+        # صفحة تحليل الأسعار:
+        # Amazon Egypt فقط
+        if not is_amazon_egypt(
+            link
+        ):
+
+            continue
+
+        price_value = (
+            extract_amazon_price(
+                item
+            )
+        )
+
+        # أي نتيجة بدون سعر
+        # مش هتدخل في التحليل
+        if (
+            price_value is None
+            or price_value <= 0
+        ):
+
+            continue
+
+        old_price = (
+            item.get(
+                "extracted_old_price"
+            )
+            or item.get(
+                "extracted_old_primary_price"
+            )
+        )
+
+        if not isinstance(
+            old_price,
+            (int, float)
+        ):
+
+            old_price = None
+
+        results.append({
+
+            "asin":
+                asin,
+
+            "title":
+                title,
+
+            "link":
+                link,
+
+            "thumbnail":
+                item.get(
+                    "thumbnail",
+                    ""
+                ),
+
+            "price_value":
+                float(
+                    price_value
+                ),
+
+            "price":
+                format_egp(
+                    price_value
+                ),
+
+            "old_price": (
+                format_egp(
+                    old_price
+                )
+                if old_price
+                else ""
+            ),
+
+            "rating":
+                item.get(
+                    "rating"
+                ),
+
+            "reviews":
+                item.get(
+                    "reviews"
+                ),
+
+            "prime":
+                bool(
+                    item.get(
+                        "prime"
+                    )
+                ),
+
+            "source":
+                "Amazon مصر",
+
+        })
+
+    return results
+
+
+def remove_amazon_duplicates(
+    products
+):
+
+    final = []
+
+    seen = set()
+
+    for product in products:
+
+        key = (
+            product.get(
+                "asin"
+            )
+            or product.get(
+                "link"
+            )
+        )
+
+        if not key:
+            continue
+
+        if key in seen:
+            continue
+
+        seen.add(
+            key
+        )
+
+        final.append(
+            product
+        )
+
+    return final
+
+
+# =========================================================
+# VALIDATION
+# =========================================================
+
+def validate_request():
+
+    if not SERPAPI_KEY:
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "error":
+                "مفتاح SerpAPI مش متسجل على السيرفر."
+
+        }), 500
+
+
+    if "image" not in request.files:
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "error":
+                "اختار صورة الأول."
+
+        }), 400
+
+
+    image_file = request.files[
+        "image"
+    ]
+
+
+    if not image_file.filename:
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "error":
+                "اختار صورة الأول."
+
+        }), 400
+
+
+    if not allowed_file(
+        image_file.filename
+    ):
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "error":
+                "الصيغ المسموحة JPG و PNG و WEBP."
+
+        }), 400
+
+
+    return None
+
+
+# =========================================================
+# PAGES
+# =========================================================
+
+@app.route("/")
+def home():
+
+    return render_template(
+        "index.html"
+    )
+
+
+@app.route("/analysis")
+def analysis_page():
+
+    return render_template(
+        "analysis.html"
+    )
+
+
+# =========================================================
+# IMAGE SEARCH API
+# =========================================================
+
+@app.route(
+    "/api/search",
+    methods=["POST"]
+)
+def api_search():
+
+    validation = validate_request()
+
+    if validation:
+        return validation
+
+
+    image_file = request.files[
+        "image"
+    ]
+
+    temp_path = None
+
+    try:
+
+        temp_path = prepare_image(
+            image_file
+        )
+
+        image_id = (
+            upload_image_to_serpapi(
+                temp_path
+            )
+        )
+
+        # الأولوية للصورة
+        lens_data = google_lens(
+            image_id,
+            search_type="visual_matches"
+        )
+
+        results = get_visual_results(
+            lens_data
+        )
+
+        if not results:
+
+            return jsonify({
+
+                "success":
+                    True,
+
+                "count":
+                    0,
+
+                "message":
+                    "دورنا على الصورة وملاقيناش صور للمنتج ده في أي متجر.",
+
+                "results":
+                    []
+
+            })
+
+        return jsonify({
+
+            "success":
+                True,
+
+            "count":
+                len(
+                    results
+                ),
+
+            "results":
+                results
+
+        })
+
+
+    except requests.Timeout:
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "error":
+                "البحث أخد وقت أطول من المتوقع. جرّب تاني."
+
+        }), 504
+
+
+    except requests.RequestException as error:
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "error":
+                f"حصلت مشكلة أثناء الاتصال: {error}"
+
+        }), 500
+
+
+    except Exception as error:
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "error":
+                str(error)
+
+        }), 500
+
+
+    finally:
+
+        if (
+            temp_path
+            and os.path.exists(
+                temp_path
+            )
+        ):
+
+            try:
+
+                os.remove(
+                    temp_path
+                )
+
+            except OSError:
+
+                pass
+
+
+# =========================================================
+# PRICE ANALYSIS API
+# =========================================================
+
+@app.route(
+    "/api/analyze",
+    methods=["POST"]
+)
+def api_analyze():
+
+    validation = validate_request()
+
+    if validation:
+        return validation
+
+
+    image_file = request.files[
+        "image"
+    ]
+
+    temp_path = None
+
+    try:
+
+        temp_path = prepare_image(
+            image_file
+        )
+
+        image_id = (
+            upload_image_to_serpapi(
+                temp_path
+            )
+        )
+
+        # Lens هنا بيحدد المنتج
+        lens_data = google_lens(
+            image_id,
+            search_type="products",
+            country="eg"
+        )
+
+        product_query = (
+            find_product_query(
+                lens_data
+            )
+        )
+
+        if not product_query:
+
+            return jsonify({
+
+                "success":
+                    True,
+
+                "analysis_available":
+                    False,
+
+                "count":
+                    0,
+
+                "message":
+                    "دورنا ومقدرناش نحدد المنتج بشكل كافي علشان نبحث عن أسعاره على Amazon مصر.",
+
+                "results":
+                    []
+
+            })
+
+
+        all_products = []
+
+
+        # صفحتين من Amazon مصر
+        for page in [1, 2]:
+
+            amazon_data = (
+                amazon_egypt_search(
+                    product_query,
+                    page
+                )
+            )
+
+            page_results = (
+                parse_amazon_price_results(
+                    amazon_data
+                )
+            )
+
+            all_products.extend(
+                page_results
+            )
+
+
+        all_products = (
+            remove_amazon_duplicates(
+                all_products
+            )
+        )
+
+
+        if not all_products:
+
+            return jsonify({
+
+                "success":
+                    True,
+
+                "analysis_available":
+                    False,
+
+                "count":
+                    0,
+
+                "query":
+                    product_query,
+
+                "message":
+                    "دورنا على Amazon مصر وملاقيناش أي أسعار ظاهرة للمنتج ده.",
+
+                "results":
+                    []
+
+            })
+
+
+        # ترتيب الأسعار من الأقل للأعلى
+        products_by_price = sorted(
+
+            all_products,
+
+            key=lambda product:
+                product[
+                    "price_value"
+                ]
+
+        )
+
+
+        prices = [
+
+            product[
+                "price_value"
+            ]
+
+            for product
+            in products_by_price
+
+        ]
+
+
+        minimum = min(
+            prices
+        )
+
+
+        maximum = max(
+            prices
+        )
+
+
+        average = statistics.mean(
+            prices
+        )
+
+
+        cheapest = (
+            products_by_price[0]
+        )
+
+
+        return jsonify({
+
+            "success":
+                True,
+
+            "analysis_available":
+                True,
+
+            "query":
+                product_query,
+
+            "count":
+                len(
+                    products_by_price
+                ),
+
+            "stats": {
+
+                "minimum":
+                    format_egp(
+                        minimum
+                    ),
+
+                "average":
+                    format_egp(
+                        average
+                    ),
+
+                "maximum":
+                    format_egp(
+                        maximum
+                    ),
+
+            },
+
+            "closest":
+                cheapest,
+
+            "results":
+                products_by_price
+
+        })
+
+
+    except requests.Timeout:
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "error":
+                "تحليل الأسعار أخد وقت أطول من المتوقع. جرّب تاني."
+
+        }), 504
+
+
+    except requests.RequestException as error:
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "error":
+                f"حصلت مشكلة أثناء الاتصال: {error}"
+
+        }), 500
+
+
+    except Exception as error:
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "error":
+                str(error)
+
+        }), 500
+
+
+    finally:
+
+        if (
+            temp_path
+            and os.path.exists(
+                temp_path
+            )
+        ):
+
+            try:
+
+                os.remove(
+                    temp_path
+                )
+
+            except OSError:
+
+                pass
+
+
+# =========================================================
+# ERRORS
+# =========================================================
+
+@app.errorhandler(413)
+def too_large(error):
+
+    return jsonify({
+
+        "success":
+            False,
+
+        "error":
+            "حجم الصورة كبير. أقصى حجم 10 ميجا."
+
+    }), 413
+
+
+# =========================================================
+# LOCAL RUN
+# =========================================================
+
+if __name__ == "__main__":
+
+    app.run(
+        host="0.0.0.0",
+        port=5000,
+        debug=True
+    )
