@@ -1464,16 +1464,76 @@ nav a:focus-visible {
 }
 
 @media (max-width: 700px) {
+    html {
+        -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+        overflow-x: hidden;
+    }
+
+    .nav-container {
+        width: calc(100% - 24px);
+        min-height: auto;
+        padding: 14px 0;
+    }
+
     nav {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         flex-wrap: wrap;
         justify-content: center;
+        gap: 6px;
     }
 
     nav a {
-        flex: initial;
-        padding: 9px 12px;
-        font-size: 14px;
+        min-width: 0;
+        padding: 9px 6px;
+        font-size: 13px;
+        line-height: 1.35;
+        white-space: normal;
     }
+
+    .logo { font-size: 20px; }
+
+    .container {
+        width: calc(100% - 24px);
+        padding-bottom: 42px;
+    }
+
+    .hero {
+        padding: 30px 0 22px;
+    }
+
+    .hero h1 {
+        font-size: clamp(26px, 8vw, 32px);
+        line-height: 1.25;
+    }
+
+    .hero p {
+        font-size: 15px;
+        line-height: 1.7;
+    }
+
+    .section-title {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 6px;
+        margin: 26px 0 14px;
+    }
+
+    .section-title h2 { font-size: 21px; }
+
+    .error-box,
+    .warning-box {
+        width: 100%;
+        overflow-wrap: anywhere;
+        padding: 14px;
+    }
+
+    .creation-grid { grid-template-columns: 1fr; gap: 14px; }
+    .creation-card > img { height: 230px; }
+    .image-actions { flex-wrap: wrap; }
 
     .editable-fact,
     .detail-row {
@@ -1489,4 +1549,45 @@ nav a:focus-visible {
         align-items: stretch;
         flex-direction: column;
     }
+
+    .file-picker,
+    .file-name {
+        max-width: 100%;
+        text-align: center;
+    }
+}
+
+@media (max-width: 480px) {
+    .nav-container,
+    .container { width: calc(100% - 20px); }
+
+    nav a {
+        padding: 8px 4px;
+        font-size: 12px;
+    }
+
+    .logo { font-size: 19px; }
+    .logo-mark { width: 30px; height: 30px; }
+
+    .upload-card {
+        padding: 14px;
+        border-radius: 14px;
+    }
+
+    .drop-area {
+        min-height: 230px;
+        padding: 18px 12px;
+    }
+
+    .upload-icon { font-size: 42px; }
+    .drop-area h3 { font-size: 20px; }
+    .drop-area p { white-space: normal; }
+
+    .primary-button,
+    .secondary-button {
+        max-width: 100%;
+        padding: 12px 18px;
+    }
+
+    .creation-card > img { height: 210px; }
 }
