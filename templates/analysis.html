@@ -252,34 +252,71 @@
     </section>
 
 
-    <section
-        id="cheapestSection"
-        style="display:none"
+    <div
+        id="featuredOffersGrid"
+        class="featured-offers-grid"
     >
 
-        <div class="section-title">
+        <section
+            id="cheapestSection"
+            style="display:none"
+        >
 
-            <div>
+            <div class="section-title">
 
-                <h2>
-                    أقل سعر ظاهر
-                </h2>
+                <div>
 
-                <p>
-                    أرخص عرض لقيناه على Amazon مصر
-                </p>
+                    <h2>
+                        أقل سعر ظاهر
+                    </h2>
+
+                    <p>
+                        أرخص عرض لقيناه على Amazon مصر
+                    </p>
+
+                </div>
 
             </div>
 
-        </div>
+
+            <div
+                id="cheapestProduct"
+                class="closest-product"
+            ></div>
+
+        </section>
 
 
-        <div
-            id="cheapestProduct"
-            class="closest-product"
-        ></div>
+        <section
+            id="mostReviewedSection"
+            style="display:none"
+        >
 
-    </section>
+            <div class="section-title">
+
+                <div>
+
+                    <h2>
+                        الأكثر تقييماً
+                    </h2>
+
+                    <p>
+                        العرض صاحب أكبر عدد مراجعات على Amazon مصر
+                    </p>
+
+                </div>
+
+            </div>
+
+
+            <div
+                id="mostReviewedProduct"
+                class="closest-product"
+            ></div>
+
+        </section>
+
+    </div>
 
 
     <section
@@ -400,6 +437,15 @@ const cheapestSection =
 
 const cheapestProduct =
     document.getElementById("cheapestProduct");
+
+const featuredOffersGrid =
+    document.getElementById("featuredOffersGrid");
+
+const mostReviewedSection =
+    document.getElementById("mostReviewedSection");
+
+const mostReviewedProduct =
+    document.getElementById("mostReviewedProduct");
 
 const offersSection =
     document.getElementById("offersSection");
@@ -786,12 +832,33 @@ function renderAnalysis(data) {
 
     if (data.closest) {
 
-        renderCheapest(
-            data.closest
+        renderFeaturedProduct(
+            cheapestProduct,
+            data.closest,
+            "أقل سعر"
         );
 
         cheapestSection.style.display =
             "block";
+
+    }
+
+
+    if (data.most_reviewed) {
+
+        renderFeaturedProduct(
+            mostReviewedProduct,
+            data.most_reviewed,
+            "أكبر عدد تقييمات",
+            "most-reviewed-badge"
+        );
+
+        mostReviewedSection.style.display =
+            "block";
+
+        featuredOffersGrid.classList.add(
+            "has-most-reviewed"
+        );
 
     }
 
@@ -812,12 +879,17 @@ function renderAnalysis(data) {
 
 
 /* =========================================
-   Cheapest
+   Featured offers
 ========================================= */
 
-function renderCheapest(product) {
+function renderFeaturedProduct(
+    container,
+    product,
+    badgeText,
+    badgeClass = ""
+) {
 
-    cheapestProduct.innerHTML = `
+    container.innerHTML = `
 
         <div class="closest-image-wrap">
 
@@ -843,8 +915,8 @@ function renderCheapest(product) {
 
         <div class="closest-info">
 
-            <span class="cheapest-badge">
-                أقل سعر
+            <span class="cheapest-badge ${badgeClass}">
+                ${escapeHTML(badgeText)}
             </span>
 
 
@@ -1114,10 +1186,20 @@ function clearResults() {
     cheapestSection.style.display =
         "none";
 
+    mostReviewedSection.style.display =
+        "none";
+
     offersSection.style.display =
         "none";
 
+    featuredOffersGrid.classList.remove(
+        "has-most-reviewed"
+    );
+
     cheapestProduct.innerHTML =
+        "";
+
+    mostReviewedProduct.innerHTML =
         "";
 
     offersTableBody.innerHTML =

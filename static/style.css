@@ -918,8 +918,27 @@ button {
 
 
 /* =====================================================
-   CHEAPEST PRODUCT
+   FEATURED OFFERS
 ===================================================== */
+
+.featured-offers-grid {
+    display: grid;
+
+    grid-template-columns: minmax(0, 1fr);
+
+    gap: 24px;
+}
+
+
+.featured-offers-grid.has-most-reviewed {
+    grid-template-columns:
+        repeat(2, minmax(0, 1fr));
+}
+
+
+.featured-offers-grid > section {
+    min-width: 0;
+}
 
 .closest-product {
     background: white;
@@ -984,6 +1003,13 @@ button {
     font-weight: bold;
 
     margin-left: 6px;
+}
+
+
+.most-reviewed-badge {
+    background: #fef3c7;
+
+    color: #92400e;
 }
 
 
@@ -1192,6 +1218,11 @@ button {
     .stats-grid {
         grid-template-columns:
             repeat(2, 1fr);
+    }
+
+
+    .featured-offers-grid.has-most-reviewed {
+        grid-template-columns: 1fr;
     }
 
 }

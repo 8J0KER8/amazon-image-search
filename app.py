@@ -1036,6 +1036,44 @@ def remove_amazon_duplicates(
     return final
 
 
+def amazon_review_count(value):
+
+    if isinstance(value, bool):
+        return 0
+
+    if isinstance(value, (int, float)):
+        return max(0, int(value))
+
+    text = clean_text(value).translate(
+        str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+    ).replace(",", "").lower()
+
+    match = re.search(
+        r"(\d+(?:\.\d+)?)\s*([km]?)",
+        text
+    )
+
+    if not match:
+        return 0
+
+    multiplier = {
+        "k": 1000,
+        "m": 1000000
+    }.get(
+        match.group(2),
+        1
+    )
+
+    try:
+        return max(
+            0,
+            int(float(match.group(1)) * multiplier)
+        )
+
+    except ValueError:
+        return 0
+
+
 # =========================================================
 # AI PRODUCT MATCHING FOR PRICE ANALYSIS
 # =========================================================
@@ -1673,6 +1711,32 @@ def api_analyze():
         )
 
 
+        reviewed_products = [
+            (
+                amazon_review_count(
+                    product.get("reviews")
+                ),
+                product
+            )
+            for product in products_by_price
+        ]
+
+        reviewed_products = [
+            item
+            for item in reviewed_products
+            if item[0] > 0
+        ]
+
+        most_reviewed = (
+            max(
+                reviewed_products,
+                key=lambda item: item[0]
+            )[1]
+            if reviewed_products
+            else None
+        )
+
+
         return jsonify({
 
             "success":
@@ -1710,6 +1774,9 @@ def api_analyze():
 
             "closest":
                 cheapest,
+
+            "most_reviewed":
+                most_reviewed,
 
             "results":
                 products_by_price
