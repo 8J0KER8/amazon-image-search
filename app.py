@@ -5,6 +5,7 @@ import tempfile
 import json
 import ipaddress
 import socket
+from concurrent.futures import ThreadPoolExecutor
 from html import unescape
 from html.parser import HTMLParser
 
@@ -1540,16 +1541,18 @@ def api_creation_search():
         )
         results = get_visual_results(lens_data)
 
-        readable_results = []
-        for result in results:
+        def readable_result(result):
             link = result.get("link", "")
             if not safe_external_url(link):
-                continue
+                return None
             try:
-                if extract_product_facts(link):
-                    readable_results.append(result)
+                return result if extract_product_facts(link) else None
             except Exception:
-                continue
+                return None
+
+        # نفحص عددًا محدودًا بالتوازي حتى لا يتوقف البحث بسبب مواقع بطيئة.
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            readable_results = [item for item in executor.map(readable_result, results[:15]) if item]
         results = readable_results
 
         return jsonify({
@@ -1645,7 +1648,7 @@ def extract_product_facts(url):
     response = requests.get(
         url,
         headers={"User-Agent": "Mozilla/5.0"},
-        timeout=15,
+        timeout=5,
         stream=True
     )
     response.raise_for_status()
