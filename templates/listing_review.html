@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zahed Hand | تقييم عرض Amazon</title>
+    <link rel="stylesheet" href="{{ static_asset_url('style.css') }}">
+</head>
+<body>
+<header>
+    <div class="nav-container">
+        <a class="logo" href="/" aria-label="Zahed Hand"><span class="logo-mark">ZH</span><span>Zahed</span><span class="logo-accent">Hand</span></a>
+        <nav>
+            <a href="/">البحث بالصورة</a>
+            <a href="/analysis">تحليل الأسعار</a>
+            <a href="/creation">إنشاء منتج</a>
+            <a href="/listing-review" class="active">تقييم العرض</a>
+            <a href="/market-analysis">كل المتاجر</a>
+        </nav>
+    </div>
+</header>
+
+<main class="container">
+    <section class="hero">
+        <div class="page-badge">Amazon مصر</div>
+        <h1>تقييم العرض</h1>
+        <p>حط رابط عرض Amazon مصر، والذكاء الاصطناعي يوضح نقاط القوة والنواقص التي يمكن تحسينها.</p>
+    </section>
+
+    <form id="listingReviewForm" class="upload-card listing-review-form">
+        <label for="listingUrl">رابط العرض</label>
+        <div class="review-url-row">
+            <input id="listingUrl" class="review-url-input" type="url" inputmode="url" placeholder="https://www.amazon.eg/..." required>
+            <button id="reviewButton" class="primary-button" type="submit">قيّم العرض</button>
+        </div>
+        <p class="listing-review-note">التقييم إرشادي من بيانات الصفحة الظاهرة، ولا يغيّر العرض أو يضمن ترتيبًا على Amazon.</p>
+    </form>
+
+    <div id="status" class="status" aria-live="polite"></div>
+
+    <section id="reviewSection" class="review-result" hidden>
+        <div id="reviewOverview" class="review-overview"></div>
+        <div class="review-columns">
+            <section class="review-panel">
+                <h3>نقاط القوة</h3>
+                <ul id="strengthsList" class="review-list"></ul>
+            </section>
+            <section class="review-panel">
+                <h3>خطوات التحسين أولًا</h3>
+                <ul id="nextStepsList" class="review-list"></ul>
+            </section>
+        </div>
+        <section class="review-panel" style="margin-top:20px">
+            <h3>النواقص والمقترحات</h3>
+            <div id="gapsList" class="gap-list"></div>
+        </section>
+    </section>
+</main>
+
+<script>
+const reviewForm = document.getElementById("listingReviewForm");
+const listingUrl = document.getElementById("listingUrl");
+const reviewButton = document.getElementById("reviewButton");
+const statusBox = document.getElementById("status");
+const reviewSection = document.getElementById("reviewSection");
+const reviewOverview = document.getElementById("reviewOverview");
+const strengthsList = document.getElementById("strengthsList");
+const nextStepsList = document.getElementById("nextStepsList");
+const gapsList = document.getElementById("gapsList");
+
+reviewForm.addEventListener("submit", async event => {
+    event.preventDefault();
+
+    const url = listingUrl.value.trim();
+    if (!url) {
+        showError("اكتب رابط عرض Amazon مصر أولًا.");
+        return;
+    }
+
+    reviewSection.hidden = true;
+    statusBox.innerHTML = '<div class="loading-box"><div class="loader"></div><strong>بنقرأ بيانات العرض وبنجهّز التقييم...</strong><span>قد يستغرق الأمر لحظات قليلة</span></div>';
+    reviewButton.disabled = true;
+
+    try {
+        const response = await fetch("/api/listing-review", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({url})
+        });
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || "حصل خطأ أثناء تقييم العرض. جرّب تاني.");
+        }
+
+        renderReview(data);
+        statusBox.innerHTML = "";
+    } catch (error) {
+        showError(error.message || "حصل خطأ أثناء تقييم العرض. جرّب تاني.");
+    } finally {
+        reviewButton.disabled = false;
+    }
+});
+
+function renderReview(data) {
+    const review = data.review || {};
+    const source = data.source || {};
+    const numericScore = Number(review.overall_score);
+    const score = Number.isFinite(numericScore)
+        ? Math.max(0, Math.min(100, Math.round(numericScore)))
+        : 0;
+
+    reviewOverview.innerHTML = `
+        <div class="review-score"><strong>${score}</strong><span>من 100</span></div>
+        <div>
+            <h2>${escapeHTML(source.title || "عرض Amazon مصر")}</h2>
+            <p>${escapeHTML(review.summary || "تم تقييم بيانات العرض الظاهرة.")}</p>
+            <p class="review-source">صور ظاهرة للتقييم: ${escapeHTML(source.image_count || 0)} · التقييم إرشادي ولا يضمن ترتيبًا.</p>
+        </div>
+    `;
+
+    renderSimpleList(strengthsList, review.strengths, "لا توجد نقاط قوة واضحة في البيانات المتاحة.");
+    renderSimpleList(nextStepsList, review.next_steps, "لا توجد خطوات مقترحة حاليًا.");
+
+    const gaps = Array.isArray(review.gaps) ? review.gaps : [];
+    gapsList.innerHTML = gaps.length
+        ? gaps.map(gap => {
+            const severity = normalizeSeverity(gap.severity);
+            return `
+                <article class="gap-item">
+                    <h4>${escapeHTML(gap.area || "نقطة تحتاج مراجعة")} <span class="severity severity-${severity}">${severityLabel(severity)}</span></h4>
+                    <p>${escapeHTML(gap.finding || "لم تظهر بيانات كافية لهذا الجزء.")}</p>
+                    <p><strong>المقترح:</strong> ${escapeHTML(gap.recommendation || "أضف بيانات دقيقة وواضحة للمنتج.")}</p>
+                </article>
+            `;
+        }).join("")
+        : '<p class="listing-review-note">لم تظهر نواقص محددة من البيانات المتاحة.</p>';
+
+    reviewSection.hidden = false;
+    reviewSection.scrollIntoView({behavior: "smooth", block: "start"});
+}
+
+function renderSimpleList(container, items, fallback) {
+    const list = Array.isArray(items) && items.length ? items : [fallback];
+    container.innerHTML = list.map(item => `<li>${escapeHTML(item)}</li>`).join("");
+}
+
+function normalizeSeverity(value) {
+    return ["high", "medium", "low"].includes(value) ? value : "low";
+}
+
+function severityLabel(value) {
+    return {high: "أولوية عالية", medium: "أولوية متوسطة", low: "تحسين إضافي"}[value];
+}
+
+function showError(message) {
+    statusBox.innerHTML = `<div class="error-box">${escapeHTML(message)}</div>`;
+}
+
+function escapeHTML(value) {
+    const element = document.createElement("div");
+    element.textContent = value === null || value === undefined ? "" : String(value);
+    return element.innerHTML;
+}
+</script>
+</body>
+</html>

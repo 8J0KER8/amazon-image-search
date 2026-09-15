@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zahed Hand | تحليل كل المتاجر</title>
+    <link rel="stylesheet" href="{{ static_asset_url('style.css') }}">
+</head>
+<body>
+<header>
+    <div class="nav-container">
+        <a class="logo" href="/" aria-label="Zahed Hand"><span class="logo-mark">ZH</span><span>Zahed</span><span class="logo-accent">Hand</span></a>
+        <nav>
+            <a href="/">البحث بالصورة</a>
+            <a href="/analysis">تحليل الأسعار</a>
+            <a href="/creation">إنشاء منتج</a>
+            <a href="/listing-review">تقييم العرض</a>
+            <a href="/market-analysis" class="active">كل المتاجر</a>
+        </nav>
+    </div>
+</header>
+
+<main class="container">
+    <section class="hero">
+        <div class="page-badge">متاجر مصر بالجنيه</div>
+        <h1>تحليل أسعار كل المتاجر</h1>
+        <p>ارفع صورة المنتج لنبحث عن العروض المشابهة التي يظهر سعرها بالجنيه المصري عبر المتاجر المختلفة.</p>
+    </section>
+
+    <section class="upload-card">
+        <div id="dropArea" class="drop-area">
+            <div id="uploadPlaceholder">
+                <div class="upload-icon">📊</div>
+                <h3>حط صورة المنتج هنا</h3>
+                <p>اضغط هنا أو اسحب الصورة</p>
+                <span>JPG / PNG / WEBP</span>
+            </div>
+            <img id="preview" class="preview" alt="معاينة الصورة">
+        </div>
+        <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+        <div class="buttons">
+            <button id="analyzeButton" class="primary-button" type="button" disabled>حلل كل المتاجر</button>
+            <button id="removeButton" class="secondary-button" type="button" style="display:none">شيل الصورة</button>
+        </div>
+    </section>
+
+    <div id="status" class="status" aria-live="polite"></div>
+
+    <section id="statsSection" style="display:none">
+        <div class="stats-grid">
+            <div class="stat-card"><div class="stat-icon">↓</div><span>أقل سعر</span><strong id="minimumPrice">-</strong></div>
+            <div class="stat-card highlight"><div class="stat-icon">≈</div><span>متوسط السعر</span><strong id="averagePrice">-</strong></div>
+            <div class="stat-card"><div class="stat-icon">↑</div><span>أعلى سعر</span><strong id="maximumPrice">-</strong></div>
+            <div class="stat-card"><div class="stat-icon">#</div><span>عدد العروض</span><strong id="offersCount">-</strong></div>
+        </div>
+    </section>
+
+    <section id="closestSection" class="market-cheapest" style="display:none">
+        <div class="section-title">
+            <div>
+                <h2>أقل سعر ظاهر</h2>
+                <p>أرخص عرض مشابه ظهر بسعر بالجنيه المصري</p>
+            </div>
+        </div>
+        <div id="closestProduct" class="closest-product"></div>
+    </section>
+
+    <section id="resultsSection" style="display:none">
+        <div class="section-title">
+            <div>
+                <h2>عروض المتاجر</h2>
+                <p>نتائج Google Lens التي يظهر سعرها بالجنيه المصري، مرتبة من الأرخص للأغلى</p>
+            </div>
+            <div id="resultCount" class="result-count"></div>
+        </div>
+        <div id="resultsGrid" class="products-grid"></div>
+    </section>
+</main>
+
+<script src="{{ static_asset_url('upload.js') }}"></script>
+<script>
+const dropArea = document.getElementById("dropArea");
+const fileInput = document.getElementById("fileInput");
+const preview = document.getElementById("preview");
+const uploadPlaceholder = document.getElementById("uploadPlaceholder");
+const analyzeButton = document.getElementById("analyzeButton");
+const removeButton = document.getElementById("removeButton");
+const statusBox = document.getElementById("status");
+const statsSection = document.getElementById("statsSection");
+const closestSection = document.getElementById("closestSection");
+const closestProduct = document.getElementById("closestProduct");
+const resultsSection = document.getElementById("resultsSection");
+const resultsGrid = document.getElementById("resultsGrid");
+const resultCount = document.getElementById("resultCount");
+
+let selectedFile = null;
+let previewUrl = "";
+
+dropArea.addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", () => {
+    if (fileInput.files.length) setFile(fileInput.files[0]);
+});
+dropArea.addEventListener("dragover", event => {
+    event.preventDefault();
+    dropArea.classList.add("dragover");
+});
+dropArea.addEventListener("dragleave", () => dropArea.classList.remove("dragover"));
+dropArea.addEventListener("drop", event => {
+    event.preventDefault();
+    dropArea.classList.remove("dragover");
+    if (event.dataTransfer.files.length) setFile(event.dataTransfer.files[0]);
+});
+
+function setFile(file) {
+    if (!file.type.startsWith("image/")) {
+        showError("اختار صورة صحيحة.");
+        return;
+    }
+
+    selectedFile = file;
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = URL.createObjectURL(file);
+    preview.src = previewUrl;
+    preview.style.display = "block";
+    uploadPlaceholder.style.display = "none";
+    analyzeButton.disabled = false;
+    removeButton.style.display = "inline-block";
+    clearResults();
+}
+
+removeButton.addEventListener("click", event => {
+    event.stopPropagation();
+    selectedFile = null;
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = "";
+    fileInput.value = "";
+    preview.src = "";
+    preview.style.display = "none";
+    uploadPlaceholder.style.display = "block";
+    analyzeButton.disabled = true;
+    removeButton.style.display = "none";
+    clearResults();
+});
+
+analyzeButton.addEventListener("click", async () => {
+    if (!selectedFile) return;
+
+    clearResults();
+    analyzeButton.disabled = true;
+    statusBox.innerHTML = '<div class="loading-box"><div class="loader"></div><strong>بنبحث عن عروض مشابهة بالجنيه المصري...</strong><span>بنرتب الأسعار الظاهرة من الأرخص للأغلى</span></div>';
+
+    const uploadFile = typeof optimizeImageForUpload === "function"
+        ? await optimizeImageForUpload(selectedFile)
+        : selectedFile;
+    const formData = new FormData();
+    formData.append("image", uploadFile);
+
+    try {
+        const response = await fetch("/api/market-analysis", {method: "POST", body: formData});
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || "حصل خطأ أثناء تحليل المتاجر. جرّب تاني.");
+        }
+
+        statusBox.innerHTML = "";
+
+        if (!data.analysis_available) {
+            statusBox.innerHTML = `<div class="warning-box"><strong>ملقيناش عروض بالجنيه المصري</strong><p>${escapeHTML(data.message || "جرّب صورة أوضح للمنتج.")}</p></div>`;
+            return;
+        }
+
+        renderResults(data);
+    } catch (error) {
+        showError(error.message || "حصل خطأ أثناء تحليل المتاجر. جرّب تاني.");
+    } finally {
+        analyzeButton.disabled = false;
+    }
+});
+
+function renderResults(data) {
+    document.getElementById("minimumPrice").textContent = data.stats.minimum;
+    document.getElementById("averagePrice").textContent = data.stats.average;
+    document.getElementById("maximumPrice").textContent = data.stats.maximum;
+    document.getElementById("offersCount").textContent = data.count;
+    statsSection.style.display = "block";
+
+    renderClosest(data.closest);
+    closestSection.style.display = "block";
+    renderOfferCards(Array.isArray(data.results) ? data.results : []);
+    resultCount.textContent = `${data.count} عرض`;
+    resultsSection.style.display = "block";
+}
+
+function renderClosest(product) {
+    const link = safeOfferUrl(product.link);
+    closestProduct.innerHTML = `
+        <div class="closest-image-wrap">
+            ${product.thumbnail ? `<img src="${escapeAttribute(product.thumbnail)}" alt="" loading="lazy">` : '<div class="no-image">مفيش صورة متاحة</div>'}
+        </div>
+        <div class="closest-info">
+            <span class="cheapest-badge">أقل سعر</span>
+            <h3>${escapeHTML(product.title || "عرض مشابه")}</h3>
+            <div class="closest-price">${escapeHTML(product.price || "السعر غير متاح")}</div>
+            <div class="rating">${escapeHTML(product.source || product.domain || "متجر")}</div>
+            ${link ? `<a href="${escapeAttribute(link)}" target="_blank" rel="noopener noreferrer" class="amazon-button inline-button">افتح العرض</a>` : ""}
+        </div>
+    `;
+}
+
+function renderOfferCards(products) {
+    resultsGrid.innerHTML = products.map((product, index) => {
+        const link = safeOfferUrl(product.link);
+        return `
+            <article class="product-card">
+                <div class="product-image-wrap">
+                    ${product.thumbnail ? `<img class="product-image" src="${escapeAttribute(product.thumbnail)}" alt="" loading="lazy">` : '<div class="no-image">مفيش صورة متاحة</div>'}
+                </div>
+                <div class="product-body">
+                    <div class="product-badges">
+                        <span class="rank-badge">#${index + 1}</span>
+                        <span class="source-badge">${escapeHTML(product.source || product.domain || "متجر")}</span>
+                    </div>
+                    <h3 class="product-title">${escapeHTML(product.title || "عرض مشابه")}</h3>
+                    <div class="product-price">${escapeHTML(product.price || "السعر غير متاح")}</div>
+                    ${link ? `<a href="${escapeAttribute(link)}" target="_blank" rel="noopener noreferrer" class="amazon-button">افتح العرض</a>` : ""}
+                </div>
+            </article>
+        `;
+    }).join("");
+}
+
+function clearResults() {
+    statusBox.innerHTML = "";
+    statsSection.style.display = "none";
+    closestSection.style.display = "none";
+    resultsSection.style.display = "none";
+    closestProduct.innerHTML = "";
+    resultsGrid.innerHTML = "";
+    resultCount.textContent = "";
+}
+
+function safeOfferUrl(value) {
+    try {
+        const url = new URL(String(value || ""));
+        return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+    } catch (_) {
+        return "";
+    }
+}
+
+function showError(message) {
+    statusBox.innerHTML = `<div class="error-box">${escapeHTML(message)}</div>`;
+}
+
+function escapeHTML(value) {
+    const element = document.createElement("div");
+    element.textContent = value === null || value === undefined ? "" : String(value);
+    return element.innerHTML;
+}
+
+function escapeAttribute(value) {
+    return String(value || "").replace(/[&<>'"]/g, character => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
+    })[character]);
+}
+</script>
+</body>
+</html>

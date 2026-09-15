@@ -54,6 +54,14 @@
                 إنشاء منتج
             </a>
 
+            <a href="/listing-review">
+                تقييم العرض
+            </a>
+
+            <a href="/market-analysis">
+                كل المتاجر
+            </a>
+
         </nav>
 
     </div>
@@ -316,6 +324,36 @@
 
         </section>
 
+
+        <section
+            id="bestOfferSection"
+            style="display:none"
+        >
+
+            <div class="section-title">
+
+                <div>
+
+                    <h2>
+                        أفضل عرض مكتمل
+                    </h2>
+
+                    <p>
+                        الأفضل من حيث البيانات والصور وجودة المحتوى الظاهر
+                    </p>
+
+                </div>
+
+            </div>
+
+
+            <div
+                id="bestOfferProduct"
+                class="closest-product"
+            ></div>
+
+        </section>
+
     </div>
 
 
@@ -442,6 +480,12 @@ const mostReviewedSection =
 
 const mostReviewedProduct =
     document.getElementById("mostReviewedProduct");
+
+const bestOfferSection =
+    document.getElementById("bestOfferSection");
+
+const bestOfferProduct =
+    document.getElementById("bestOfferProduct");
 
 const offersSection =
     document.getElementById("offersSection");
@@ -837,6 +881,10 @@ function renderAnalysis(data) {
         cheapestSection.style.display =
             "block";
 
+        featuredOffersGrid.classList.add(
+            "has-featured-offers"
+        );
+
     }
 
 
@@ -852,9 +900,20 @@ function renderAnalysis(data) {
         mostReviewedSection.style.display =
             "block";
 
-        featuredOffersGrid.classList.add(
-            "has-most-reviewed"
+    }
+
+
+    if (data.best_offer) {
+
+        renderFeaturedProduct(
+            bestOfferProduct,
+            data.best_offer,
+            "أفضل بيانات",
+            "best-offer-badge"
         );
+
+        bestOfferSection.style.display =
+            "block";
 
     }
 
@@ -877,6 +936,16 @@ function renderAnalysis(data) {
 /* =========================================
    Featured offers
 ========================================= */
+
+function shortFeaturedTitle(value) {
+
+    const title = String(value || "").trim();
+
+    return title.length > 78
+        ? `${title.slice(0, 75).trim()}…`
+        : title;
+
+}
 
 function renderFeaturedProduct(
     container,
@@ -915,6 +984,18 @@ function renderFeaturedProduct(
                 ${escapeHTML(badgeText)}
             </span>
 
+            ${
+                Number.isFinite(Number(product.quality_score))
+
+                ? `
+                    <span class="quality-score">
+                        اكتمال البيانات ${escapeHTML(product.quality_score)}%
+                    </span>
+                `
+
+                : ""
+            }
+
 
             ${
                 product.prime
@@ -932,7 +1013,7 @@ function renderFeaturedProduct(
             <h3>
 
                 ${escapeHTML(
-                    product.title
+                    shortFeaturedTitle(product.title)
                 )}
 
             </h3>
@@ -1164,17 +1245,23 @@ function clearResults() {
     mostReviewedSection.style.display =
         "none";
 
+    bestOfferSection.style.display =
+        "none";
+
     offersSection.style.display =
         "none";
 
     featuredOffersGrid.classList.remove(
-        "has-most-reviewed"
+        "has-featured-offers"
     );
 
     cheapestProduct.innerHTML =
         "";
 
     mostReviewedProduct.innerHTML =
+        "";
+
+    bestOfferProduct.innerHTML =
         "";
 
     offersTableBody.innerHTML =
