@@ -1628,14 +1628,14 @@ def normalize_fact(value):
     return re.sub(r"\s+", " ", value).strip().lower()
 
 
-GARBAGE_TOKENS = ("font-", "padding", "margin", "display:", "color:", "background", "var(", "url(", "px", "rem", "line-height", "letter-spacing", "vertical-align", "text-decoration", "overflow", "border", "position:", "!important", "<script", "<style", "</", "/> ", "class=", "style=", "aria-", "data-", "section-id", "navbar", "widget", "badge-", "schema\":", "machine_identifier", "__stripe", "function", "javascript", "css", "html", "selector", "\\u003c", "\\u003e", "&lt;", "&gt;")
+GARBAGE_TOKENS = ("font-", "padding", "margin", "display:", "color:", "background", "var(", "url(", "line-height", "letter-spacing", "vertical-align", "text-decoration", "overflow", "border", "position:", "!important", "<script", "<style", "</", "/> ", "class=", "style=", "aria-", "data-", "section-id", "navbar", "widget", "badge-", "schema\":", "machine_identifier", "__stripe", "function", "javascript", "css", "html", "selector", "\\u003c", "\\u003e", "&lt;", "&gt;")
 
 
 def is_valid_product_value(label, value):
 
     value = clean_text(value)
     lowered = normalize_fact(value)
-    if not value or "/>" in lowered or any(token in lowered for token in GARBAGE_TOKENS) or re.search(r"<[^>]+>|\b(?:class|style|aria|data)-[\w-]+\s*=", lowered):
+    if not value or "/>" in lowered or any(token in lowered for token in GARBAGE_TOKENS) or re.search(r"<[^>]+>|\b(?:class|style|aria|data)-[\w-]+\s*=|\b\d+(?:\.\d+)?\s*(?:px|rem)\b", lowered):
         return False
     if re.fullmatch(r"\d+(?:[.,]\d+)?", lowered) or re.fullmatch(r"(?:random\s+standalone|random|unknown|standalone)\s+\d+", lowered):
         return False
@@ -1727,13 +1727,28 @@ def creation_source_facts(result):
     title_facts = clean_creation_facts(semantic_title_facts(title))
     if title_facts:
         return title_facts
-    link = clean_text(result.get("link", ""))
-    if not safe_external_url(link):
+    # Lens يعيد أحيانًا عنوانًا نظيفًا بينما تمنع صفحة المتجر القراءة.
+    # هذا العنوان وحده دليل كافٍ لفتح المراجعة، لكننا لا ننسخه كعنوان
+    # نهائي ولا نستنتج منه علامة تجارية أو مواصفات غير مؤكدة.
+    if not title or title == "نتيجة مشابهة للصورة" or not is_valid_product_value("اسم المنتج", title):
         return {}
-    try:
-        return clean_creation_facts(semanticize_facts(title, extract_product_facts(link)))
-    except Exception:
-        return {}
+    return {"اسم المنتج": lens_product_identity(title)}
+
+
+def lens_product_identity(title):
+
+    lowered = normalize_fact(title)
+    identities = (
+        (("desk organizer", "desk organiser", "pen holder", "pencil holder"), "منظم مكتب"),
+        (("keyboard",), "لوحة مفاتيح"),
+        (("alarm clock", "digital clock", "desk clock"), "ساعة مكتب"),
+        (("cat muzzle", "cat mask", "cat helmet", "cat head cover"), "كمامة حماية للقطط"),
+        (("storage box", "storage container"), "صندوق تخزين"),
+    )
+    for keywords, identity in identities:
+        if any(keyword in lowered for keyword in keywords):
+            return identity
+    return "منتج عام"
 
 
 def extract_product_facts(url):
@@ -1798,15 +1813,20 @@ def api_creation_extract():
     for source in selected:
         url = source.get("link", "") if isinstance(source, dict) else ""
         entry = {"title": clean_text(source.get("title", "")), "source": clean_text(source.get("source", "") or get_domain(url)), "url": url, "status": "تعذر قراءة هذا العرض", "attributes": {}}
-        entry["attributes"] = clean_creation_facts(source.get("creation_facts"))
-        if entry["attributes"]:
-            entry["status"] = "تم تجهيز البيانات"
-        elif safe_external_url(url):
+        fallback_facts = clean_creation_facts(source.get("creation_facts"))
+        page_facts = {}
+        if safe_external_url(url):
             try:
-                entry["attributes"] = semanticize_facts(entry["title"], extract_product_facts(url))
-                entry["status"] = "تم استخراج البيانات" if entry["attributes"] else "تعذر قراءة هذا العرض"
+                page_facts = semanticize_facts(entry["title"], extract_product_facts(url))
             except Exception:
                 pass
+        entry["attributes"] = page_facts or fallback_facts
+        if page_facts:
+            for key, value in fallback_facts.items():
+                entry["attributes"].setdefault(key, value)
+            entry["status"] = "تم استخراج البيانات"
+        elif fallback_facts:
+            entry["status"] = "تم تجهيز البيانات من Lens"
         if not entry["attributes"]:
             title_facts = semantic_title_facts(entry["title"])
             if title_facts:
