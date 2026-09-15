@@ -1540,6 +1540,18 @@ def api_creation_search():
         )
         results = get_visual_results(lens_data)
 
+        readable_results = []
+        for result in results:
+            link = result.get("link", "")
+            if not safe_external_url(link):
+                continue
+            try:
+                if extract_product_facts(link):
+                    readable_results.append(result)
+            except Exception:
+                continue
+        results = readable_results
+
         return jsonify({
             "success": True,
             "product_code": product_code,
