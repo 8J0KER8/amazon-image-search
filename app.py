@@ -62,10 +62,14 @@ def set_cache_headers(response):
         response.headers["Cache-Control"] = (
             "public, max-age=31536000, s-maxage=31536000, immutable"
         )
+        response.headers["Vercel-CDN-Cache-Control"] = (
+            "public, max-age=31536000, immutable"
+        )
 
     elif request.path in {"/", "/analysis", "/creation"} and response.status_code == 200:
-        response.headers["Cache-Control"] = (
-            "public, max-age=0, s-maxage=3600, stale-while-revalidate=86400"
+        response.headers["Cache-Control"] = "public, max-age=120"
+        response.headers["Vercel-CDN-Cache-Control"] = (
+            "public, max-age=3600, stale-while-revalidate=86400"
         )
 
     return response
