@@ -1546,7 +1546,7 @@ def api_creation_search():
             if not safe_external_url(link):
                 continue
             try:
-                if extract_product_facts(link):
+                if extract_product_facts(link) or is_valid_product_value("اسم المنتج", result.get("title", "")):
                     readable_results.append(result)
             except Exception:
                 continue
@@ -1645,6 +1645,15 @@ def is_valid_product_value(label, value):
 valid_product_value = is_valid_product_value
 
 
+def clean_product_fact(label, value):
+
+    value = clean_text(value).replace(r"\u003C", "<").replace(r"\u003E", ">")
+    wrapped = re.fullmatch(r"<([a-z][a-z0-9]*)>\s*([^<>]+?)\s*</\1>", value, re.IGNORECASE)
+    if wrapped:
+        value = clean_text(unescape(wrapped.group(2)))
+    return value if is_valid_product_value(label, value) else ""
+
+
 def extract_product_facts(url):
 
     response = requests.get(
@@ -1672,8 +1681,10 @@ def extract_product_facts(url):
             if isinstance(node, dict) and str(node.get("@type", "")).lower() == "product":
                 for key, label in (("name", "اسم المنتج"), ("color", "اللون"), ("material", "الخامة"), ("model", "الموديل"), ("weight", "الوزن"), ("category", "نوع المنتج"), ("description", "الوصف factual")):
                     value = node.get(key)
-                    if isinstance(value, (str, int, float)) and valid_product_value(label, value) and label != "الوصف factual":
-                        facts[label] = clean_text(value)
+                    if isinstance(value, (str, int, float)) and label != "الوصف factual":
+                        cleaned = clean_product_fact(label, value)
+                        if cleaned:
+                            facts[label] = cleaned
     blocked = ("brand", "manufacturer", "seller", "store", "company", "ماركة", "الشركة", "المصنع")
     return {key: value for key, value in facts.items() if is_valid_product_value(key, value) and not any(word in normalize_fact(value) for word in blocked)}
 
@@ -1699,6 +1710,11 @@ def api_creation_extract():
                 entry["status"] = "تم استخراج البيانات" if entry["attributes"] else "تعذر قراءة هذا العرض"
             except Exception:
                 pass
+        if not entry["attributes"]:
+            title = clean_product_fact("اسم المنتج", entry["title"])
+            if title:
+                entry["attributes"] = {"اسم المنتج": title}
+                entry["status"] = "تم استخراج البيانات"
         statuses.append(entry)
         for key, value in entry["attributes"].items():
             attributes.setdefault(key, {}).setdefault(normalize_fact(value), {"value": value, "sources": []})["sources"].append(entry["source"])
