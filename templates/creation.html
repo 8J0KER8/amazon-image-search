@@ -89,6 +89,7 @@ let lensResults = [];
 let extractionData = null;
 
 function esc(value) { const div = document.createElement("div"); div.textContent = value || ""; return div.innerHTML; }
+function shortTitle(value, maxLength = 78) { const text = String(value || "").trim(); return text.length > maxLength ? `${text.slice(0, maxLength).trimEnd()}…` : text; }
 function updateCount() {
     const count = resultsGrid.querySelectorAll("input:checked").length;
     selectedCount.textContent = `تم اختيار ${count} من 5 عروض`;
@@ -117,7 +118,7 @@ form.addEventListener("submit", async event => {
         if (!payload.results.length) return showError("ملقيناش عروض مشابهة للصورة.");
         lensResults = payload.results; resultsGrid.innerHTML = payload.results.map((item, index) => `<article class="creation-card">
             ${item.image || item.thumbnail ? `<img src="${esc(item.image || item.thumbnail)}" alt="" loading="lazy">` : ""}
-            <div class="creation-card-body"><h3>${esc(item.title)}</h3><p>${esc(item.source || item.domain)}</p><strong>${esc(item.price || "السعر غير متاح")}</strong>
+            <div class="creation-card-body"><h3>${esc(shortTitle(item.title))}</h3><p>${esc(item.source || item.domain)}</p><strong>${esc(item.price || "السعر غير متاح")}</strong>
             <a href="${esc(item.link)}" target="_blank" rel="noopener noreferrer">فتح العرض</a>
             <label><input type="checkbox" data-index="${index}"> اختيار هذا العرض</label></div></article>`).join("");
         resultsGrid.querySelectorAll("input").forEach(input => input.addEventListener("change", () => {
