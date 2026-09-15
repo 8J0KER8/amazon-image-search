@@ -1631,7 +1631,7 @@ def is_valid_product_value(label, value):
     lowered = normalize_fact(value)
     if not value or "/>" in lowered or any(token in lowered for token in GARBAGE_TOKENS) or re.search(r"<[^>]+>|\b(?:class|style|aria|data)-[\w-]+\s*=", lowered):
         return False
-    if re.fullmatch(r"\d+(?:[.,]\d+)?", lowered) or re.fullmatch(r"(?:random|unknown|standalone)\s+\d+", lowered):
+    if re.fullmatch(r"\d+(?:[.,]\d+)?", lowered) or re.fullmatch(r"(?:random\s+standalone|random|unknown|standalone)\s+\d+", lowered):
         return False
     if label in ("الوزن", "السعة", "الكمية") and not re.search(r"(?:\d+[\s]*(?:g|kg|gram|grams|كجم|جم|ml|l|مل|ل|قطعة|pcs|piece))", lowered, re.IGNORECASE):
         return False
