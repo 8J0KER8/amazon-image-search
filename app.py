@@ -1796,11 +1796,53 @@ def api_creation_generate_content():
             clean_attributes[clean_text(key)] = clean_text(value)
     if not clean_attributes:
         return jsonify({"success": False, "error": "البيانات المستخرجة غير كافية لإنشاء محتوى موثوق. ارجع واختر عروضًا أوضح أو أدخل البيانات الناقصة."}), 400
-    title = clean_attributes.get("اسم المنتج") or clean_attributes.get("نوع المنتج") or "منتج عام"
-    title = " ".join([title] + [value for key, value in clean_attributes.items() if key not in ("اسم المنتج", "نوع المنتج")][:4])
-    bullets = [f"{key}: {value}" for key, value in clean_attributes.items() if key not in ("اسم المنتج", "نوع المنتج")][:5]
-    description = "منتج عام بالمواصفات التالية: " + "، ".join(f"{key}: {value}" for key, value in clean_attributes.items()) if clean_attributes else "منتج عام."
-    return jsonify({"success": True, "product_code": code, "title": title, "bullets": bullets, "description": description, "specifications": clean_attributes, "category": payload.get("category"), "missing": ["الوزن", "الأبعاد"] if not any(key in clean_attributes for key in ("الوزن", "المقاس / الأبعاد")) else []})
+    translations = {"transparent": "شفاف", "breathable": "قابل للتنفس", "black": "أسود", "white": "أبيض", "stainless steel": "ستانلس ستيل", "cat muzzle": "كمامة حماية للقطط", "cat mask": "قناع حماية للقطط", "bathing": "الاستحمام", "grooming": "العناية بالحيوان", "nail trimming": "قص الأظافر", "vet visits": "الزيارات البيطرية"}
+    for key, value in list(clean_attributes.items()):
+        lower_value = normalize_fact(value)
+        for source, arabic in translations.items():
+            if lower_value == source:
+                clean_attributes[key] = arabic
+    identity = clean_attributes.get("اسم المنتج") or clean_attributes.get("نوع المنتج") or "منتج عام"
+    title_parts = [identity]
+    for key in ("التصميم", "التهوية", "الاستخدام", "نوع الإغلاق"):
+        if key in clean_attributes and clean_attributes[key] not in title_parts:
+            title_parts.append(clean_attributes[key])
+    title = " ".join(title_parts[:4])
+    bullet_templates = {
+        "التصميم": lambda value: f"تصميم {value}: يحافظ على الشكل المؤكد للمنتج ويجعله واضحًا أثناء الاستخدام وفقًا للمواصفات المتاحة.",
+        "التهوية": lambda value: f"تهوية {value}: يتضمن المنتج خاصية التهوية المؤكدة لتوفير استخدام عملي أثناء العناية بالحيوان.",
+        "نوع الإغلاق": lambda value: f"{value}: يساعد نظام الإغلاق المؤكد على تثبيت المنتج أثناء الاستخدام دون إضافة مواصفات غير مذكورة.",
+        "الاستخدام": lambda value: f"استخدامات متعددة: مناسب لـ{value} كما وردت في بيانات المصادر المختارة.",
+        "الخامة": lambda value: f"خامة {value}: مصنوع من الخامة المحددة في بيانات المنتج لتوضيح طبيعته للمستخدم.",
+        "اللون": lambda value: f"اللون {value}: يأتي باللون المحدد ضمن بيانات المنتج ليسهل مطابقة الاختيار قبل الشراء.",
+    }
+    bullets = []
+    for key, value in clean_attributes.items():
+        if key in ("اسم المنتج", "نوع المنتج") or key not in bullet_templates:
+            continue
+        bullet = bullet_templates[key](value)
+        if bullet not in bullets:
+            bullets.append(bullet)
+    for key, value in clean_attributes.items():
+        if len(bullets) >= 5 or key in ("اسم المنتج", "نوع المنتج") or key in bullet_templates:
+            continue
+        bullets.append(f"مواصفة مؤكدة: يتضمن المنتج {key} بقيمة {value} كما وردت في بيانات المصادر المختارة.")
+    description_parts = [f"{identity} هو منتج عام بالمواصفات المؤكدة التالية."]
+    if "الاستخدام" in clean_attributes:
+        description_parts.append(f"يمكن استخدامه في {clean_attributes['الاستخدام']} وفقًا للمعلومات المتاحة.")
+    features = [f"{key} {value}" for key, value in clean_attributes.items() if key not in ("اسم المنتج", "نوع المنتج", "الاستخدام")]
+    if features:
+        description_parts.append("وتشمل بياناته: " + "، ".join(features) + ".")
+    description = " ".join(description_parts)
+    facts_text = "، ".join(f"{key}: {value}" for key, value in clean_attributes.items())
+    image_plan = [
+        {"title": "الصورة الرئيسية", "brief": "المنتج فقط على خلفية بيضاء، بدون نصوص أو عناصر دعائية.", "prompt": f"استخدم الصورة الأصلية المرفوعة كمرجع لهوية {identity}. حافظ على شكل المنتج وتصميمه ولونه ومكوناته المؤكدة ({facts_text}). خلفية بيضاء نقية، المنتج هو العنصر الرئيسي، بدون شعارات أو علامات تجارية أو نصوص أو إكسسوارات غير مؤكدة."},
+        {"title": "صورة توضيحية للمميزات", "brief": "إظهار أهم المميزات المؤكدة بصريًا فقط.", "prompt": f"استخدم الصورة الأصلية المرفوعة كمرجع، وأظهر فقط المميزات المؤكدة للمنتج: {facts_text}. حافظ على الشكل والتفاصيل الواقعية، بدون إضافة خصائص أو شعارات أو علامات تجارية غير مؤكدة."},
+        {"title": "صورة الاستخدام", "brief": "عرض المنتج في سياق استخدام مرتبط بالمعلومات المؤكدة.", "prompt": f"استخدم الصورة الأصلية المرفوعة كمرجع للمنتج {identity}، وضعه في سياق {clean_attributes.get('الاستخدام', 'استخدام عام')} فقط. حافظ على الشكل واللون والمكونات المؤكدة، ولا تضف وظائف أو أدوات أو علامات تجارية غير مؤكدة."},
+        {"title": "صورة تفاصيل المنتج", "brief": "لقطة واضحة للتفاصيل المادية والتصميمية المؤكدة.", "prompt": f"لقطة تفصيلية للمنتج اعتمادًا على الصورة الأصلية، توضح فقط: {facts_text}. حافظ على التصميم والمكونات والألوان المؤكدة، بدون نصوص أو شعارات أو تفاصيل مخترعة."},
+        {"title": "صورة إضافية", "brief": "زاوية إضافية مفيدة دون تغيير المنتج.", "prompt": f"اعرض زاوية إضافية واقعية للمنتج باستخدام الصورة الأصلية والحقائق المؤكدة فقط: {facts_text}. لا تغير شكل المنتج ولا تضف إكسسوارات أو علامة تجارية أو خصائص غير مؤكدة."},
+    ]
+    return jsonify({"success": True, "product_code": code, "title": title, "bullets": bullets[:5], "description": description, "specifications": clean_attributes, "category": payload.get("category"), "missing": ["الوزن", "الأبعاد"] if not any(key in clean_attributes for key in ("الوزن", "المقاس / الأبعاد")) else [], "image_plan": image_plan})
 
 
 # =========================================================

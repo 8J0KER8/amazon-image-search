@@ -1333,3 +1333,11 @@ button {
 .listing-field textarea { width: 100%; min-height: 60px; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font: inherit; line-height: 1.6; }
 .listing-field .copy-button { margin-top: 7px; padding: 8px 18px; }
 .phase3 > .secondary-button { margin: 8px 4px; }
+.product-details { margin-top: 25px; border-top: 1px solid #e5e7eb; padding-top: 15px; }
+.detail-row { display: grid; grid-template-columns: 170px 1fr auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid #f3f4f6; }
+.image-plan { margin-top: 25px; border-top: 1px solid #e5e7eb; padding-top: 15px; }
+.image-plan-card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; margin: 12px 0; }
+.image-plan-card h4 { margin: 0 0 7px; }
+.image-plan-card details { margin: 10px 0; }
+.image-plan-card summary { cursor: pointer; font-weight: bold; }
+.ready-status { color: #047857; font-weight: bold; margin-left: 12px; }
