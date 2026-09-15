@@ -1835,14 +1835,26 @@ def api_creation_generate_content():
         description_parts.append("وتشمل بياناته: " + "، ".join(features) + ".")
     description = " ".join(description_parts)
     facts_text = "، ".join(f"{key}: {value}" for key, value in clean_attributes.items())
-    image_plan = [
-        {"title": "الصورة الرئيسية", "brief": "المنتج فقط على خلفية بيضاء، بدون نصوص أو عناصر دعائية.", "prompt": f"استخدم الصورة الأصلية المرفوعة كمرجع لهوية {identity}. حافظ على شكل المنتج وتصميمه ولونه ومكوناته المؤكدة ({facts_text}). خلفية بيضاء نقية، المنتج هو العنصر الرئيسي، بدون شعارات أو علامات تجارية أو نصوص أو إكسسوارات غير مؤكدة."},
-        {"title": "صورة توضيحية للمميزات", "brief": "إظهار أهم المميزات المؤكدة بصريًا فقط.", "prompt": f"استخدم الصورة الأصلية المرفوعة كمرجع، وأظهر فقط المميزات المؤكدة للمنتج: {facts_text}. حافظ على الشكل والتفاصيل الواقعية، بدون إضافة خصائص أو شعارات أو علامات تجارية غير مؤكدة."},
-        {"title": "صورة الاستخدام", "brief": "عرض المنتج في سياق استخدام مرتبط بالمعلومات المؤكدة.", "prompt": f"استخدم الصورة الأصلية المرفوعة كمرجع للمنتج {identity}، وضعه في سياق {clean_attributes.get('الاستخدام', 'استخدام عام')} فقط. حافظ على الشكل واللون والمكونات المؤكدة، ولا تضف وظائف أو أدوات أو علامات تجارية غير مؤكدة."},
-        {"title": "صورة تفاصيل المنتج", "brief": "لقطة واضحة للتفاصيل المادية والتصميمية المؤكدة.", "prompt": f"لقطة تفصيلية للمنتج اعتمادًا على الصورة الأصلية، توضح فقط: {facts_text}. حافظ على التصميم والمكونات والألوان المؤكدة، بدون نصوص أو شعارات أو تفاصيل مخترعة."},
-        {"title": "صورة إضافية", "brief": "زاوية إضافية مفيدة دون تغيير المنتج.", "prompt": f"اعرض زاوية إضافية واقعية للمنتج باستخدام الصورة الأصلية والحقائق المؤكدة فقط: {facts_text}. لا تغير شكل المنتج ولا تضف إكسسوارات أو علامة تجارية أو خصائص غير مؤكدة."},
-    ]
-    return jsonify({"success": True, "product_code": code, "title": title, "bullets": bullets[:5], "description": description, "specifications": clean_attributes, "category": payload.get("category"), "missing": ["الوزن", "الأبعاد"] if not any(key in clean_attributes for key in ("الوزن", "المقاس / الأبعاد")) else [], "image_plan": image_plan})
+    image_plan = [{"title": "الصورة الرئيسية", "brief": "المنتج فقط على خلفية بيضاء، بدون نصوص أو عناصر دعائية.", "prompt": f"استخدم الصورة الأصلية المرفوعة كمرجع لهوية {identity}. حافظ على شكل المنتج وتصميمه ولونه ومكوناته المؤكدة ({facts_text}). خلفية بيضاء نقية، المنتج هو العنصر الرئيسي، بدون شعارات أو علامات تجارية أو نصوص أو إكسسوارات غير مؤكدة."}]
+    if len(clean_attributes) > 1:
+        image_plan.append({"title": "صورة توضيحية للمميزات", "brief": "إظهار أهم المميزات المؤكدة بصريًا فقط.", "prompt": f"استخدم الصورة الأصلية المرفوعة كمرجع، وأظهر فقط المميزات المؤكدة للمنتج: {facts_text}. حافظ على الشكل والتفاصيل الواقعية، بدون إضافة خصائص أو شعارات أو علامات تجارية غير مؤكدة."})
+    if clean_attributes.get("الاستخدام"):
+        image_plan.append({"title": "صورة الاستخدام", "brief": "عرض المنتج في سياق استخدام مرتبط بالمعلومات المؤكدة.", "prompt": f"استخدم الصورة الأصلية المرفوعة كمرجع للمنتج {identity}، وضعه في سياق {clean_attributes['الاستخدام']} فقط. حافظ على الشكل واللون والمكونات المؤكدة، ولا تضف وظائف أو أدوات أو علامات تجارية غير مؤكدة."})
+    if len(clean_attributes) >= 3:
+        image_plan.append({"title": "صورة تفاصيل المنتج", "brief": "لقطة واضحة للتفاصيل المادية والتصميمية المؤكدة.", "prompt": f"لقطة تفصيلية للمنتج اعتمادًا على الصورة الأصلية، توضح فقط: {facts_text}. حافظ على التصميم والمكونات والألوان المؤكدة، بدون نصوص أو شعارات أو تفاصيل مخترعة."})
+    if any(key in clean_attributes for key in ("اللون", "الكمية", "محتويات العبوة")):
+        image_plan.append({"title": "صورة إضافية", "brief": "زاوية إضافية مفيدة دون تغيير المنتج.", "prompt": f"اعرض زاوية إضافية واقعية للمنتج باستخدام الصورة الأصلية والحقائق المؤكدة فقط: {facts_text}. لا تغير شكل المنتج ولا تضف إكسسوارات أو علامة تجارية أو خصائص غير مؤكدة."})
+    warnings = []
+    sensitive = ("medical", "مرض", "يعالج", "بطارية", "كيميائي", "مبيد", "pesticide", "chemical", "medicine")
+    if any(token in normalize_fact(" ".join(clean_attributes.values())) for token in sensitive):
+        warnings.append("بيانات المنتج قد تحتاج مراجعة سياسات أو مواد خطرة قبل إنشاء العرض.")
+    score = 30 + min(20, len(title) // 4) + min(20, len(bullets) * 4) + (15 if len(description) >= 80 else 8) + min(15, len(clean_attributes) * 3)
+    deductions = []
+    if len(title) < 15: deductions.append("العنوان قصير جدًا")
+    if len(bullets) < 3: deductions.append("عدد النقاط الرئيسية محدود")
+    if len(description) < 80: deductions.append("الوصف يحتاج تفاصيل أكثر")
+    if not payload.get("category"): deductions.append("لم يتم تحديد فئة مؤكدة")
+    return jsonify({"success": True, "product_code": code, "title": title, "bullets": bullets[:5], "description": description, "specifications": clean_attributes, "category": payload.get("category"), "missing": ["الوزن", "الأبعاد"] if not any(key in clean_attributes for key in ("الوزن", "المقاس / الأبعاد")) else [], "image_plan": image_plan, "quality": {"score": min(100, score), "deductions": deductions}, "policy_warnings": warnings})
 
 
 # =========================================================

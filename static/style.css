@@ -1341,3 +1341,5 @@ button {
 .image-plan-card details { margin: 10px 0; }
 .image-plan-card summary { cursor: pointer; font-weight: bold; }
 .ready-status { color: #047857; font-weight: bold; margin-left: 12px; }
+.quality-review, .policy-review { margin-top: 22px; padding: 15px; border-radius: 10px; background: #f9fafb; }
+.policy-review { background: #fff7ed; color: #9a3412; }

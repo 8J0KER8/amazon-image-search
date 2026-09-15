@@ -56,6 +56,8 @@
         <div id="missingFields"></div>
         <section class="product-details"><h3>تفاصيل المنتج</h3><div id="detailsFields"></div></section>
         <section class="image-plan"><h3>صور المنتج</h3><div id="imagePlan"></div></section>
+        <section class="quality-review"><h3>مراجعة الجودة الداخلية</h3><strong id="qualityScore"></strong><ul id="qualityDeductions"></ul></section>
+        <section id="policyReview" class="policy-review" hidden><h3>مراجعة السياسات</h3><ul id="policyWarnings"></ul></section>
         <button id="copyAllButton" class="secondary-button" type="button">نسخ الكل</button>
         <button id="saveButton" class="primary-button" type="button">حفظ المحتوى</button>
         <button class="secondary-button" type="button" disabled>الانتقال لإنشاء الصور — قريبًا</button>
@@ -161,11 +163,15 @@ function renderPhase3(data) {
     missingFields.innerHTML = data.missing.length ? `<h3>بيانات ناقصة تحتاج إدخال يدوي</h3><p>${data.missing.map(esc).join("، ")}</p>` : "";
     detailsFields.innerHTML = Object.entries(data.specifications).map(([key, value]) => `<div class="detail-row"><strong>${esc(key)}</strong><span>${esc(value)}</span><button class="secondary-button copy-detail" type="button">نسخ</button></div>`).join("");
     imagePlan.innerHTML = data.image_plan.map(item => `<article class="image-plan-card"><h4>${esc(item.title)}</h4><p>${esc(item.brief)}</p><details><summary>تفاصيل الصورة</summary><p>${esc(item.prompt)}</p></details><span class="ready-status">جاهزة للإنشاء</span><button class="secondary-button create-image-button" type="button">إنشاء الصورة</button></article>`).join("");
+    qualityScore.textContent = `النتيجة: ${data.quality.score} من 100 — تقييم داخلي وليس تقييم أمازون الرسمي`;
+    qualityDeductions.innerHTML = data.quality.deductions.map(item => `<li>${esc(item)}</li>`).join("");
+    policyReview.hidden = !data.policy_warnings.length;
+    policyWarnings.innerHTML = data.policy_warnings.map(item => `<li>${esc(item)}</li>`).join("");
     listingFields.querySelectorAll(".copy-button").forEach(button => button.addEventListener("click", () => navigator.clipboard.writeText(button.previousElementSibling.value)));
     detailsFields.querySelectorAll(".copy-detail").forEach(button => button.addEventListener("click", () => navigator.clipboard.writeText(`${button.previousElementSibling.previousElementSibling.textContent}: ${button.previousElementSibling.textContent}`)));
     imagePlan.querySelectorAll(".create-image-button").forEach(button => button.addEventListener("click", () => showError("سيتم تفعيل إنشاء الصور في المرحلة التالية.")));
 }
-const finalSku = document.getElementById("finalSku"), listingFields = document.getElementById("listingFields"), categoryText = document.getElementById("categoryText"), missingFields = document.getElementById("missingFields"), detailsFields = document.getElementById("detailsFields"), imagePlan = document.getElementById("imagePlan"), copyAllButton = document.getElementById("copyAllButton"), saveButton = document.getElementById("saveButton"), backButton = document.getElementById("backButton");
+const finalSku = document.getElementById("finalSku"), listingFields = document.getElementById("listingFields"), categoryText = document.getElementById("categoryText"), missingFields = document.getElementById("missingFields"), detailsFields = document.getElementById("detailsFields"), imagePlan = document.getElementById("imagePlan"), qualityScore = document.getElementById("qualityScore"), qualityDeductions = document.getElementById("qualityDeductions"), policyReview = document.getElementById("policyReview"), policyWarnings = document.getElementById("policyWarnings"), copyAllButton = document.getElementById("copyAllButton"), saveButton = document.getElementById("saveButton"), backButton = document.getElementById("backButton");
 copyAllButton.addEventListener("click", () => navigator.clipboard.writeText(`Seller SKU: ${finalSku.textContent}\n${[...listingFields.querySelectorAll("textarea")].map((field, i) => `${i === 0 ? "عنوان المنتج" : i <= 5 ? "النقطة الرئيسية " + i : "وصف المنتج"}: ${field.value}`).join("\n")}`));
 saveButton.addEventListener("click", () => showError("تم حفظ المحتوى في جلسة الإنشاء الحالية."));
 backButton.addEventListener("click", () => { phase3Section.hidden = true; form.hidden = false; extractionSection.hidden = false; resultsSection.hidden = true; statusBox.innerHTML = ""; });
