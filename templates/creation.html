@@ -35,9 +35,9 @@
 
     <div id="status" class="status"></div>
     <section id="resultsSection" class="creation-results" hidden>
-        <div class="section-title"><h2>العروض المشابهة</h2><span id="selectedCount">تم اختيار 0 عروض</span></div>
-        <div id="resultsGrid" class="creation-grid"></div>
+        <div class="section-title"><h2>العروض المشابهة</h2><span id="selectedCount">تم اختيار 0 من 5 عروض</span></div>
         <button id="useButton" class="primary-button" type="button" disabled>استخدام العروض المختارة</button>
+        <div id="resultsGrid" class="creation-grid"></div>
     </section>
 
     <section id="extractionSection" class="creation-results" hidden>
@@ -66,8 +66,9 @@ let extractionData = null;
 function esc(value) { const div = document.createElement("div"); div.textContent = value || ""; return div.innerHTML; }
 function updateCount() {
     const count = resultsGrid.querySelectorAll("input:checked").length;
-    selectedCount.textContent = `تم اختيار ${count} عروض`;
+    selectedCount.textContent = `تم اختيار ${count} من 5 عروض`;
     useButton.disabled = count === 0;
+    resultsGrid.querySelectorAll("input:not(:checked)").forEach(input => input.disabled = count >= 5);
 }
 function showError(message) { statusBox.innerHTML = `<div class="error-box">${esc(message)}</div>`; }
 
@@ -90,7 +91,11 @@ form.addEventListener("submit", async event => {
             <div class="creation-card-body"><h3>${esc(item.title)}</h3><p>${esc(item.source || item.domain)}</p><strong>${esc(item.price || "السعر غير متاح")}</strong>
             <a href="${esc(item.link)}" target="_blank" rel="noopener noreferrer">فتح العرض</a>
             <label><input type="checkbox" data-index="${index}"> اختيار هذا العرض</label></div></article>`).join("");
-        resultsGrid.querySelectorAll("input").forEach(input => input.addEventListener("change", updateCount));
+        resultsGrid.querySelectorAll("input").forEach(input => input.addEventListener("change", () => {
+            const count = resultsGrid.querySelectorAll("input:checked").length;
+            if (count > 5) { input.checked = false; showError("يمكنك اختيار 5 عروض كحد أقصى."); }
+            updateCount();
+        }));
         updateCount(); resultsSection.hidden = false; statusBox.innerHTML = "";
     } catch (error) { showError("حصل خطأ أثناء البحث. حاول مرة أخرى."); }
     finally { searchButton.disabled = false; }

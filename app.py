@@ -1610,6 +1610,24 @@ def normalize_fact(value):
     return re.sub(r"\s+", " ", value).strip().lower()
 
 
+GARBAGE_TOKENS = ("font-", "padding", "margin", "display:", "color:", "background", "var(", "url(", "px", "rem", "line-height", "letter-spacing", "text-decoration", "overflow", "<script", "<style", "class=", "navbar", "widget", "schema\":", "machine_identifier", "__stripe", "function", "javascript", "css", "html", "selector")
+
+
+def valid_product_value(label, value):
+
+    value = clean_text(value)
+    lowered = normalize_fact(value)
+    if not value or any(token in lowered for token in GARBAGE_TOKENS):
+        return False
+    if label in ("الوزن", "السعة", "الكمية") and not re.search(r"(?:\d+[\s]*(?:g|kg|gram|grams|كجم|جم|ml|l|مل|ل|قطعة|pcs|piece))", lowered, re.IGNORECASE):
+        return False
+    if label in ("المقاس / الأبعاد",) and not re.search(r"\d+\s*[x×]\s*\d+", lowered):
+        return False
+    if label == "اللون" and re.fullmatch(r"#?[0-9a-f]{3,8}", lowered):
+        return False
+    return True
+
+
 def extract_product_facts(url):
 
     response = requests.get(
@@ -1637,14 +1655,14 @@ def extract_product_facts(url):
             if isinstance(node, dict) and str(node.get("@type", "")).lower() == "product":
                 for key, label in (("name", "اسم المنتج"), ("color", "اللون"), ("material", "الخامة"), ("model", "الموديل"), ("weight", "الوزن"), ("category", "نوع المنتج"), ("description", "الوصف factual")):
                     value = node.get(key)
-                    if isinstance(value, (str, int, float)) and clean_text(value) and label != "الوصف factual":
+                    if isinstance(value, (str, int, float)) and valid_product_value(label, value) and label != "الوصف factual":
                         facts[label] = clean_text(value)
     text = clean_text(" ".join(parser.text_parts))
     labels = {"اللون": r"(?:color|اللون)\s*[:：-]\s*([^|]{1,80})", "الخامة": r"(?:material|الخامة)\s*[:：-]\s*([^|]{1,80})", "الوزن": r"(?:weight|الوزن)\s*[:：-]\s*([^|]{1,80})", "الموديل": r"(?:model|الموديل)\s*[:：-]\s*([^|]{1,80})"}
     for label, pattern in labels.items():
         if label not in facts:
             match = re.search(pattern, text, re.IGNORECASE)
-            if match and clean_text(match.group(1)):
+            if match and valid_product_value(label, match.group(1)):
                 facts[label] = clean_text(match.group(1))
     blocked = ("brand", "manufacturer", "seller", "store", "company", "ماركة", "الشركة", "المصنع")
     return {key: value for key, value in facts.items() if not any(word in normalize_fact(value) for word in blocked)}
@@ -1658,6 +1676,8 @@ def api_creation_extract():
     selected = payload.get("selected_sources", [])
     if not product_code or not isinstance(selected, list) or not selected:
         return jsonify({"success": False, "error": "تعذر استخراج بيانات كافية من العروض المختارة. جرب اختيار عروض أخرى."}), 400
+    if len(selected) > 5:
+        return jsonify({"success": False, "error": "يمكنك اختيار 5 عروض كحد أقصى."}), 400
     attributes = {}
     statuses = []
     for source in selected:
