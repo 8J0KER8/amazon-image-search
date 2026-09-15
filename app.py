@@ -36,6 +36,12 @@ SERPAPI_KEY = os.getenv(
 SERPAPI_IMAGE_URL = "https://serpapi.com/image"
 SERPAPI_SEARCH_URL = "https://serpapi.com/search.json"
 
+# Optional Phase 5 image-generation integration. Keep the key in the
+# deployment environment only; it is never returned to the browser.
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+OPENAI_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-2.5-sunburst").strip()
+OPENAI_IMAGE_EDITS_URL = "https://api.openai.com/v1/images/edits"
+
 
 ALLOWED_EXTENSIONS = {
     "jpg",
@@ -1872,6 +1878,77 @@ def api_creation_generate_content():
     if len(description) < 80: deductions.append("الوصف يحتاج تفاصيل أكثر")
     if not payload.get("category"): deductions.append("لم يتم تحديد فئة مؤكدة")
     return jsonify({"success": True, "product_code": code, "title": title, "bullets": bullets[:5], "description": description, "specifications": clean_attributes, "category": payload.get("category"), "missing": ["الوزن", "الأبعاد"] if not any(key in clean_attributes for key in ("الوزن", "المقاس / الأبعاد")) else [], "image_plan": image_plan, "quality": {"score": min(100, score), "deductions": deductions}, "policy_warnings": warnings})
+
+
+def is_safe_image_prompt(prompt):
+
+    prompt = clean_text(prompt)
+    blocked = ("<script", "<style", "javascript", "data-", "class=", "style=", "http://", "https://")
+    return bool(prompt) and len(prompt) <= 3500 and not any(token in prompt.lower() for token in blocked)
+
+
+@app.route("/api/creation/images/generate", methods=["POST"])
+def api_creation_generate_image():
+
+    if not OPENAI_API_KEY:
+        return jsonify({
+            "success": False,
+            "configured": False,
+            "error": "إنشاء الصور يحتاج ضبط OPENAI_API_KEY في إعدادات الموقع أولًا."
+        }), 503
+
+    if "image" not in request.files or not request.files["image"].filename:
+        return jsonify({"success": False, "error": "من فضلك اختر صورة المنتج الأصلية أولًا."}), 400
+
+    image_file = request.files["image"]
+    prompt = request.form.get("prompt", "")
+
+    if not allowed_file(image_file.filename) or not is_safe_image_prompt(prompt):
+        return jsonify({"success": False, "error": "تعذر تجهيز طلب الصورة."}), 400
+
+    temp_path = None
+
+    try:
+        temp_path = prepare_image(image_file)
+
+        with open(temp_path, "rb") as reference_image:
+            response = requests.post(
+                OPENAI_IMAGE_EDITS_URL,
+                headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+                data={
+                    "model": OPENAI_IMAGE_MODEL,
+                    "prompt": clean_text(prompt),
+                    "size": "1024x1024",
+                    "quality": "low",
+                },
+                files={"image[]": ("product-reference.jpg", reference_image, "image/jpeg")},
+                timeout=180
+            )
+
+        response.raise_for_status()
+        data = response.json()
+        image_base64 = (data.get("data") or [{}])[0].get("b64_json", "")
+
+        if not image_base64:
+            raise ValueError("Missing generated image")
+
+        return jsonify({
+            "success": True,
+            "image_url": f"data:image/png;base64,{image_base64}"
+        })
+
+    except requests.Timeout:
+        return jsonify({"success": False, "error": "إنشاء الصورة أخد وقت أطول من المتوقع. حاول مرة أخرى."}), 504
+
+    except Exception:
+        return jsonify({"success": False, "error": "فشل إنشاء الصورة. حاول إعادة إنشائها."}), 500
+
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
 
 
 # =========================================================

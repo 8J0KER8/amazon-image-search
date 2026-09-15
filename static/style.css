@@ -1369,6 +1369,17 @@ button {
 .image-plan-card details { margin: 10px 0; }
 .image-plan-card summary { cursor: pointer; font-weight: bold; }
 .ready-status { color: #047857; font-weight: bold; margin-left: 12px; }
+.image-actions { display: inline-flex; gap: 8px; margin-top: 10px; }
+.image-result { margin: 14px 0 4px; }
+.image-result img { display: block; width: min(100%, 380px); max-height: 380px; margin: 0 auto 9px; border-radius: 9px; object-fit: contain; background: white; }
+.download-image-link { color: #155b59; font-weight: bold; text-decoration: none; }
+.image-status { display: inline-block; font-weight: bold; }
+.generating-status { color: #a16207; }
+.review-status { color: #155b59; }
+.approved-status { color: #047857; }
+.failed-status { color: #b91c1c; }
+.image-approved { border-color: #86d7c8; background: #f0fdf9; }
+.final-assets { margin-top: 22px; padding: 15px; border-radius: 10px; background: #edf7f6; }
 .quality-review, .policy-review { margin-top: 22px; padding: 15px; border-radius: 10px; background: #f9fafb; }
 .policy-review { background: #fff7ed; color: #9a3412; }
 

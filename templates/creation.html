@@ -60,11 +60,11 @@
         <div id="missingFields"></div>
         <section class="product-details"><h3>تفاصيل المنتج</h3><div id="detailsFields"></div></section>
         <section class="image-plan"><h3>صور المنتج</h3><div id="imagePlan"></div></section>
+        <section class="final-assets"><h3>الأصول النهائية</h3><p id="assetsSummary">لم يتم إنشاء صور بعد.</p></section>
         <section class="quality-review"><h3>مراجعة الجودة الداخلية</h3><strong id="qualityScore"></strong><ul id="qualityDeductions"></ul></section>
         <section id="policyReview" class="policy-review" hidden><h3>مراجعة السياسات</h3><ul id="policyWarnings"></ul></section>
         <button id="copyAllButton" class="secondary-button" type="button">نسخ الكل</button>
         <button id="saveButton" class="primary-button" type="button">حفظ المحتوى</button>
-        <button class="secondary-button" type="button" disabled>الانتقال لإنشاء الصور — قريبًا</button>
         <button id="backButton" class="secondary-button" type="button">الرجوع لتعديل البيانات</button>
     </section>
 </main>
@@ -87,6 +87,9 @@ const fileName = document.getElementById("fileName");
 let confirmedState = null;
 let lensResults = [];
 let extractionData = null;
+let currentImagePlan = [];
+let generatedImages = new Map();
+let baseQuality = null;
 
 function esc(value) { const div = document.createElement("div"); div.textContent = value || ""; return div.innerHTML; }
 function shortTitle(value, maxLength = 78) { const text = String(value || "").trim(); return text.length > maxLength ? `${text.slice(0, maxLength).trimEnd()}…` : text; }
@@ -173,16 +176,97 @@ function renderPhase3(data) {
     categoryText.textContent = data.category || "لم يتم العثور على فئة مؤكدة من عروض أمازون المختارة.";
     missingFields.innerHTML = data.missing.length ? `<h3>بيانات ناقصة تحتاج إدخال يدوي</h3><p>${data.missing.map(esc).join("، ")}</p>` : "";
     detailsFields.innerHTML = Object.entries(data.specifications).map(([key, value]) => `<div class="detail-row"><strong>${esc(key)}</strong><span>${esc(value)}</span><button class="secondary-button copy-detail" type="button">نسخ</button></div>`).join("");
-    imagePlan.innerHTML = data.image_plan.map(item => `<article class="image-plan-card"><h4>${esc(item.title)}</h4><p>${esc(item.brief)}</p><details><summary>تفاصيل الصورة</summary><p>${esc(item.prompt)}</p></details><span class="ready-status">جاهزة للإنشاء</span><button class="secondary-button create-image-button" type="button">إنشاء الصورة</button></article>`).join("");
-    qualityScore.textContent = `النتيجة: ${data.quality.score} من 100 — تقييم داخلي وليس تقييم أمازون الرسمي`;
-    qualityDeductions.innerHTML = data.quality.deductions.map(item => `<li>${esc(item)}</li>`).join("");
+    currentImagePlan = data.image_plan || [];
+    generatedImages = new Map();
+    baseQuality = data.quality;
+    renderImagePlan();
+    updateImageQuality();
     policyReview.hidden = !data.policy_warnings.length;
     policyWarnings.innerHTML = data.policy_warnings.map(item => `<li>${esc(item)}</li>`).join("");
     listingFields.querySelectorAll(".copy-button").forEach(button => button.addEventListener("click", () => navigator.clipboard.writeText(button.previousElementSibling.value)));
     detailsFields.querySelectorAll(".copy-detail").forEach(button => button.addEventListener("click", () => navigator.clipboard.writeText(`${button.previousElementSibling.previousElementSibling.textContent}: ${button.previousElementSibling.textContent}`)));
-    imagePlan.querySelectorAll(".create-image-button").forEach(button => button.addEventListener("click", () => showError("سيتم تفعيل إنشاء الصور في المرحلة التالية.")));
 }
-const finalSku = document.getElementById("finalSku"), listingFields = document.getElementById("listingFields"), categoryText = document.getElementById("categoryText"), missingFields = document.getElementById("missingFields"), detailsFields = document.getElementById("detailsFields"), imagePlan = document.getElementById("imagePlan"), qualityScore = document.getElementById("qualityScore"), qualityDeductions = document.getElementById("qualityDeductions"), policyReview = document.getElementById("policyReview"), policyWarnings = document.getElementById("policyWarnings"), copyAllButton = document.getElementById("copyAllButton"), saveButton = document.getElementById("saveButton"), backButton = document.getElementById("backButton");
+
+function renderImagePlan() {
+    imagePlan.innerHTML = currentImagePlan.map((item, index) => `<article class="image-plan-card" data-image-slot="${index}"><h4>${esc(item.title)}</h4><p>${esc(item.brief)}</p><details><summary>تفاصيل الصورة</summary><p>${esc(item.prompt)}</p></details><div class="image-result" aria-live="polite"></div><span class="image-status ready-status">جاهزة للإنشاء</span><div class="image-actions"><button class="secondary-button create-image-button" data-generate-image="${index}" type="button">إنشاء الصورة</button><button class="secondary-button approve-image-button" data-approve-image="${index}" type="button" hidden>اعتماد الصورة</button></div></article>`).join("");
+    imagePlan.querySelectorAll("[data-generate-image]").forEach(button => button.addEventListener("click", () => generatePlannedImage(Number(button.dataset.generateImage))));
+    imagePlan.querySelectorAll("[data-approve-image]").forEach(button => button.addEventListener("click", () => approveGeneratedImage(Number(button.dataset.approveImage))));
+}
+
+async function generatePlannedImage(index) {
+    const originalImage = imageInput.files[0];
+    if (!originalImage) return showError("الصورة الأصلية غير متاحة. ارجع واختر الصورة مرة أخرى.");
+    const card = imagePlan.querySelector(`[data-image-slot="${index}"]`);
+    const button = card.querySelector("[data-generate-image]");
+    const status = card.querySelector(".image-status");
+    const wasApproved = card.classList.contains("image-approved");
+    button.disabled = true;
+    status.textContent = "جاري الإنشاء";
+    status.className = "image-status generating-status";
+    const formData = new FormData();
+    formData.append("image", originalImage);
+    formData.append("prompt", currentImagePlan[index].prompt);
+    try {
+        const response = await fetch("/api/creation/images/generate", {method: "POST", body: formData});
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || "فشل إنشاء الصورة. حاول إعادة إنشائها.");
+        generatedImages.set(index, data.image_url);
+        const result = card.querySelector(".image-result");
+        result.innerHTML = "";
+        const image = document.createElement("img");
+        image.src = data.image_url;
+        image.alt = currentImagePlan[index].title;
+        const download = document.createElement("a");
+        download.href = data.image_url;
+        download.download = `zahed-hand-${index + 1}.png`;
+        download.textContent = "تحميل الصورة";
+        download.className = "download-image-link";
+        result.append(image, download);
+        status.textContent = "جاهزة للمراجعة";
+        status.className = "image-status review-status";
+        button.textContent = "إعادة إنشاء الصورة";
+        card.classList.remove("image-approved");
+        card.querySelector("[data-approve-image]").hidden = false;
+        updateImageQuality();
+    } catch (error) {
+        if (wasApproved) {
+            status.textContent = "تم الاعتماد";
+            status.className = "image-status approved-status";
+        } else {
+            status.textContent = "فشل الإنشاء";
+            status.className = "image-status failed-status";
+        }
+        showError(error.message);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+function approveGeneratedImage(index) {
+    const card = imagePlan.querySelector(`[data-image-slot="${index}"]`);
+    card.classList.add("image-approved");
+    card.querySelector(".image-status").textContent = "تم الاعتماد";
+    card.querySelector(".image-status").className = "image-status approved-status";
+    card.querySelector("[data-approve-image]").hidden = true;
+    updateImageQuality();
+}
+
+function updateImageQuality() {
+    if (!baseQuality) return;
+    const total = currentImagePlan.length;
+    const generated = generatedImages.size;
+    const approved = imagePlan.querySelectorAll(".image-approved").length;
+    const score = Math.min(100, baseQuality.score + Math.round((generated / Math.max(total, 1)) * 10));
+    qualityScore.textContent = `النتيجة: ${score} من 100 — تقييم داخلي وليس تقييم أمازون الرسمي`;
+    const deductions = [...baseQuality.deductions];
+    if (!generated) deductions.push("لم يتم إنشاء صور بعد");
+    else if (generated < total) deductions.push(`تم إنشاء ${generated} من ${total} صور مخططة`);
+    if (generated && !approved) deductions.push("الصور تحتاج مراجعة واعتماد");
+    qualityDeductions.innerHTML = deductions.map(item => `<li>${esc(item)}</li>`).join("");
+    assetsSummary.textContent = generated ? `تم إنشاء ${generated} من ${total} صور، وتم اعتماد ${approved}.` : "لم يتم إنشاء صور بعد.";
+}
+
+const finalSku = document.getElementById("finalSku"), listingFields = document.getElementById("listingFields"), categoryText = document.getElementById("categoryText"), missingFields = document.getElementById("missingFields"), detailsFields = document.getElementById("detailsFields"), imagePlan = document.getElementById("imagePlan"), assetsSummary = document.getElementById("assetsSummary"), qualityScore = document.getElementById("qualityScore"), qualityDeductions = document.getElementById("qualityDeductions"), policyReview = document.getElementById("policyReview"), policyWarnings = document.getElementById("policyWarnings"), copyAllButton = document.getElementById("copyAllButton"), saveButton = document.getElementById("saveButton"), backButton = document.getElementById("backButton");
 copyAllButton.addEventListener("click", () => navigator.clipboard.writeText(`Seller SKU: ${finalSku.textContent}\n${[...listingFields.querySelectorAll("textarea")].map((field, i) => `${i === 0 ? "عنوان المنتج" : i <= 5 ? "النقطة الرئيسية " + i : "وصف المنتج"}: ${field.value}`).join("\n")}`));
 saveButton.addEventListener("click", () => showError("تم حفظ المحتوى في جلسة الإنشاء الحالية."));
 backButton.addEventListener("click", () => { phase3Section.hidden = true; form.hidden = false; extractionSection.hidden = false; resultsSection.hidden = true; statusBox.innerHTML = ""; });
