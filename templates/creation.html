@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Zahed Hand | إنشاء منتج</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ static_asset_url('style.css') }}">
 </head>
 <body>
 <header>
@@ -69,6 +69,7 @@
     </section>
 </main>
 
+<script src="{{ static_asset_url('upload.js') }}"></script>
 <script>
 const form = document.getElementById("creationForm");
 const statusBox = document.getElementById("status");
@@ -111,9 +112,15 @@ form.addEventListener("submit", async event => {
     const image = document.getElementById("imageInput").files[0];
     if (!code.trim()) return showError("من فضلك اكتب كود المنتج.");
     if (!image) return showError("من فضلك اختر صورة المنتج.");
-    statusBox.innerHTML = `<div class="loading-box"><strong>بندور على عروض مشابهة...</strong></div>`;
+    statusBox.innerHTML = `<div class="loading-box"><strong>بنجهّز الصورة للبحث...</strong></div>`;
     resultsSection.hidden = true; searchButton.disabled = true;
-    const data = new FormData(form);
+    const uploadImage = typeof optimizeImageForUpload === "function"
+        ? await optimizeImageForUpload(image)
+        : image;
+    const data = new FormData();
+    data.append("product_code", code);
+    data.append("image", uploadImage);
+    statusBox.innerHTML = `<div class="loading-box"><strong>بندور على عروض مشابهة...</strong></div>`;
     try {
         const response = await fetch("/api/creation/search", { method: "POST", body: data });
         const payload = await response.json();

@@ -15,7 +15,7 @@
 
     <link
         rel="stylesheet"
-        href="{{ url_for('static', filename='style.css') }}"
+        href="{{ static_asset_url('style.css') }}"
     >
 </head>
 
@@ -186,6 +186,7 @@
 </main>
 
 
+<script src="{{ static_asset_url('upload.js') }}"></script>
 <script>
 
 const dropArea =
@@ -220,6 +221,7 @@ const results =
 
 
 let selectedFile = null;
+let previewUrl = "";
 
 
 /* =========================================
@@ -322,27 +324,14 @@ function setFile(file) {
     selectedFile = file;
 
 
-    const reader =
-        new FileReader();
+    if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+    }
 
-
-    reader.onload = event => {
-
-        preview.src =
-            event.target.result;
-
-        preview.style.display =
-            "block";
-
-        uploadPlaceholder.style.display =
-            "none";
-
-    };
-
-
-    reader.readAsDataURL(
-        file
-    );
+    previewUrl = URL.createObjectURL(file);
+    preview.src = previewUrl;
+    preview.style.display = "block";
+    uploadPlaceholder.style.display = "none";
 
 
     searchButton.disabled =
@@ -369,6 +358,11 @@ removeButton.addEventListener(
         event.stopPropagation();
 
         selectedFile = null;
+
+        if (previewUrl) {
+            URL.revokeObjectURL(previewUrl);
+            previewUrl = "";
+        }
 
         fileInput.value = "";
 
@@ -419,6 +413,31 @@ searchButton.addEventListener(
                 <div class="loader"></div>
 
                 <strong>
+                    بنجهّز الصورة للبحث...
+                </strong>
+
+                <span>
+                    بنقلل حجم الرفع على الموبايل
+                </span>
+
+            </div>
+
+        `;
+
+
+        const uploadFile =
+            typeof optimizeImageForUpload === "function"
+                ? await optimizeImageForUpload(selectedFile)
+                : selectedFile;
+
+
+        statusBox.innerHTML = `
+
+            <div class="loading-box">
+
+                <div class="loader"></div>
+
+                <strong>
                     Google Lens بيحلل الصورة...
                 </strong>
 
@@ -437,7 +456,7 @@ searchButton.addEventListener(
 
         formData.append(
             "image",
-            selectedFile
+            uploadFile
         );
 
 

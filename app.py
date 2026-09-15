@@ -13,12 +13,62 @@ from urllib.parse import urlparse
 
 import requests
 from PIL import Image, ImageOps
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, url_for
 
 
 app = Flask(__name__)
 
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 60 * 60 * 24 * 365
+
+
+def static_asset_url(filename):
+
+    try:
+        version = int(
+            os.path.getmtime(
+                os.path.join(
+                    app.static_folder,
+                    filename
+                )
+            )
+        )
+
+    except OSError:
+        version = 1
+
+    return url_for(
+        "static",
+        filename=filename,
+        v=version
+    )
+
+
+@app.context_processor
+def inject_static_asset_url():
+
+    return {
+        "static_asset_url": static_asset_url
+    }
+
+
+@app.after_request
+def set_cache_headers(response):
+
+    if request.method != "GET":
+        return response
+
+    if request.path.startswith("/static/"):
+        response.headers["Cache-Control"] = (
+            "public, max-age=31536000, s-maxage=31536000, immutable"
+        )
+
+    elif request.path in {"/", "/analysis", "/creation"} and response.status_code == 200:
+        response.headers["Cache-Control"] = (
+            "public, max-age=0, s-maxage=3600, stale-while-revalidate=86400"
+        )
+
+    return response
 
 
 # =========================================================
