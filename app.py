@@ -1648,7 +1648,7 @@ def extract_product_facts(url):
     response = requests.get(
         url,
         headers={"User-Agent": "Mozilla/5.0"},
-        timeout=10,
+        timeout=5,
         stream=True
     )
     response.raise_for_status()
