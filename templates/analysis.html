@@ -368,15 +368,11 @@
                         </th>
 
                         <th>
-                            السعر القديم
-                        </th>
-
-                        <th>
                             التقييم
                         </th>
 
                         <th>
-                            Prime
+                            عدد التقييمات
                         </th>
 
                         <th></th>
@@ -1090,23 +1086,6 @@ function renderOffers(products) {
                 <td>
 
                     ${
-                        product.old_price
-
-                        ? `
-                            <span class="table-old-price">
-                                ${escapeHTML(product.old_price)}
-                            </span>
-                        `
-
-                        : "-"
-                    }
-
-                </td>
-
-
-                <td>
-
-                    ${
                         product.rating
 
                         ? `
@@ -1122,17 +1101,13 @@ function renderOffers(products) {
 
                 <td>
 
-                    ${
-                        product.prime
-
-                        ? `
-                            <span class="prime-label">
-                                Prime
-                            </span>
-                        `
-
-                        : "-"
-                    }
+                    <span class="table-review-count">
+                        ${
+                            product.review_count
+                            ? formatNumber(product.review_count)
+                            : "-"
+                        }
+                    </span>
 
                 </td>
 

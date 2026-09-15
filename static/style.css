@@ -1081,7 +1081,7 @@ button {
 .offers-table {
     width: 100%;
 
-    min-width: 950px;
+    min-width: 820px;
 
     border-collapse: collapse;
 }
@@ -1132,9 +1132,9 @@ button {
 
 
 .table-product img {
-    width: 64px;
+    width: 82px;
 
-    height: 64px;
+    height: 82px;
 
     object-fit: contain;
 
@@ -1179,10 +1179,10 @@ button {
 }
 
 
-.table-old-price {
-    color: #9ca3af;
+.table-review-count {
+    color: #374151;
 
-    text-decoration: line-through;
+    font-weight: bold;
 
     white-space: nowrap;
 }

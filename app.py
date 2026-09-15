@@ -985,6 +985,13 @@ def parse_amazon_price_results(
                     "reviews"
                 ),
 
+            "review_count":
+                amazon_review_count(
+                    item.get(
+                        "reviews"
+                    )
+                ),
+
             "prime":
                 bool(
                     item.get(
