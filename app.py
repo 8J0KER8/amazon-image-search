@@ -1654,6 +1654,50 @@ def clean_product_fact(label, value):
     return value if is_valid_product_value(label, value) else ""
 
 
+def semantic_title_facts(title):
+
+    title = clean_text(unescape(str(title)))
+    lowered = normalize_fact(title)
+    noise = ("buy online", "best price", "free shipping", "items shipped", "business supplies", "amazon", "walmart", "temu", "alibaba", "aliexpress", "souq")
+    for phrase in noise:
+        lowered = lowered.replace(phrase, " ")
+    facts = {}
+    if any(word in lowered for word in ("cat muzzle", "cat mask", "cat ball mask", "cat head cover", "كمامة قط", "قناع قط")):
+        facts["اسم المنتج"] = "كمامة حماية للقطط"
+        facts["نوع المنتج"] = "كمامة حماية للقطط"
+    if "transparent" in lowered or "شفاف" in lowered:
+        facts["التصميم"] = "شفاف"
+    if "breathable" in lowered:
+        facts["التهوية"] = "قابل للتنفس"
+    if "double-lock" in lowered or "double lock" in lowered:
+        facts["نوع الإغلاق"] = "قفل مزدوج"
+    uses = []
+    if "bath" in lowered:
+        uses.append("الاستحمام")
+    if "groom" in lowered:
+        uses.append("العناية بالحيوان")
+    if "nail trim" in lowered:
+        uses.append("قص الأظافر")
+    if "vet" in lowered:
+        uses.append("الزيارات البيطرية")
+    if uses:
+        facts["الاستخدام"] = "، ".join(dict.fromkeys(uses))
+    return facts
+
+
+def semanticize_facts(title, facts):
+
+    normalized = semantic_title_facts(title)
+    for key, value in facts.items():
+        if key == "اسم المنتج":
+            normalized.setdefault("اسم المنتج", semantic_title_facts(value).get("اسم المنتج", ""))
+            continue
+        cleaned = clean_product_fact(key, value)
+        if cleaned:
+            normalized[key] = cleaned
+    return {key: value for key, value in normalized.items() if value and is_valid_product_value(key, value)}
+
+
 def extract_product_facts(url):
 
     response = requests.get(
@@ -1706,17 +1750,24 @@ def api_creation_extract():
         entry = {"title": clean_text(source.get("title", "")), "source": clean_text(source.get("source", "") or get_domain(url)), "url": url, "status": "تعذر قراءة هذا العرض", "attributes": {}}
         if safe_external_url(url):
             try:
-                entry["attributes"] = extract_product_facts(url)
+                entry["attributes"] = semanticize_facts(entry["title"], extract_product_facts(url))
                 entry["status"] = "تم استخراج البيانات" if entry["attributes"] else "تعذر قراءة هذا العرض"
             except Exception:
                 pass
         if not entry["attributes"]:
-            title = clean_product_fact("اسم المنتج", entry["title"])
-            if title:
-                entry["attributes"] = {"اسم المنتج": title}
+            title_facts = semantic_title_facts(entry["title"])
+            if title_facts:
+                entry["attributes"] = title_facts
                 entry["status"] = "تم استخراج البيانات"
         statuses.append(entry)
         for key, value in entry["attributes"].items():
+            if key == "الاستخدام":
+                merged = attributes.setdefault(key, {}).setdefault("__merged__", {"value": "", "sources": []})
+                parts = [part.strip() for part in value.split("،") if part.strip()]
+                existing = [part.strip() for part in merged["value"].split("،") if part.strip()]
+                merged["value"] = "، ".join(dict.fromkeys(existing + parts))
+                merged["sources"].append(entry["source"])
+                continue
             attributes.setdefault(key, {}).setdefault(normalize_fact(value), {"value": value, "sources": []})["sources"].append(entry["source"])
     agreed, conflicts = {}, {}
     for key, values in attributes.items():
@@ -1726,7 +1777,7 @@ def api_creation_extract():
             conflicts[key] = list(values.values())
     if not any(item["attributes"] for item in statuses):
         return jsonify({"success": True, "available": False, "statuses": statuses, "message": "تعذر استخراج بيانات كافية من العروض المختارة. جرب اختيار عروض أخرى."})
-    return jsonify({"success": True, "available": True, "statuses": statuses, "agreed": agreed, "conflicts": conflicts, "missing": []})
+    return jsonify({"success": True, "available": True, "statuses": statuses, "agreed": agreed, "conflicts": conflicts, "missing": [], "extracted_count": sum(len(values) for values in attributes.values()), "offer_count": len(selected)})
 
 
 @app.route("/api/creation/generate-content", methods=["POST"])

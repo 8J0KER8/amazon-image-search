@@ -1321,6 +1321,11 @@ button {
 .review-conflicts fieldset { border: 1px solid #e5e7eb; margin: 12px 0; padding: 12px; }
 .review-conflicts label { display: block; margin: 9px 0; }
 .success-box a { color: #065f46; word-break: break-all; }
+.success-box details { text-align: right; }
+.success-box summary { cursor: pointer; font-weight: bold; }
+.editable-fact { display: grid; grid-template-columns: 150px 1fr auto; gap: 10px; align-items: center; margin: 12px 0; }
+.editable-fact input { width: 100%; padding: 9px; border: 1px solid #d1d5db; border-radius: 7px; font: inherit; }
+.extraction-summary { font-weight: bold; }
 .success-box pre { white-space: pre-wrap; direction: ltr; text-align: left; background: #fff; padding: 12px; }
 .phase3 { background: white; padding: 25px; border-radius: 18px; text-align: right; }
 .listing-field { margin: 18px 0; }
