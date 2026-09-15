@@ -1703,6 +1703,27 @@ def api_creation_extract():
     return jsonify({"success": True, "available": True, "statuses": statuses, "agreed": agreed, "conflicts": conflicts, "missing": []})
 
 
+@app.route("/api/creation/generate-content", methods=["POST"])
+def api_creation_generate_content():
+
+    payload = request.get_json(silent=True) or {}
+    code = payload.get("product_code", "")
+    attributes = payload.get("confirmed_attributes", {})
+    if not isinstance(code, str) or not isinstance(attributes, dict):
+        return jsonify({"success": False, "error": "تعذر تجهيز المحتوى."}), 400
+    blocked = ("brand", "manufacturer", "seller", "store", "company", "ماركة", "المصنع", "الشركة")
+    clean_attributes = {}
+    for key, item in attributes.items():
+        value = item.get("value", "") if isinstance(item, dict) else item
+        if key and isinstance(value, str) and value.strip() and not any(word in normalize_fact(value) for word in blocked):
+            clean_attributes[clean_text(key)] = clean_text(value)
+    title = clean_attributes.get("اسم المنتج") or clean_attributes.get("نوع المنتج") or "منتج عام"
+    title = " ".join([title] + [value for key, value in clean_attributes.items() if key not in ("اسم المنتج", "نوع المنتج")][:4])
+    bullets = [f"{key}: {value}" for key, value in clean_attributes.items() if key not in ("اسم المنتج", "نوع المنتج")][:5]
+    description = "منتج عام بالمواصفات التالية: " + "، ".join(f"{key}: {value}" for key, value in clean_attributes.items()) if clean_attributes else "منتج عام."
+    return jsonify({"success": True, "product_code": code, "title": title, "bullets": bullets, "description": description, "specifications": clean_attributes, "category": payload.get("category"), "missing": ["الوزن", "الأبعاد"] if not any(key in clean_attributes for key in ("الوزن", "المقاس / الأبعاد")) else []})
+
+
 # =========================================================
 # LOCAL RUN
 # =========================================================

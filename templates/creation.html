@@ -46,6 +46,19 @@
         <div id="reviewBox"></div>
         <button id="confirmButton" class="primary-button" type="button" disabled>تأكيد البيانات</button>
     </section>
+
+    <section id="phase3Section" class="creation-results phase3" hidden>
+        <h2>إنشاء محتوى عرض أمازون</h2>
+        <p><strong>Seller SKU / كود المنتج:</strong> <span id="finalSku"></span></p>
+        <div id="listingFields"></div>
+        <h3>التصنيف المقترح</h3><p id="categoryText">لم يتم تحديد تصنيف موثوق حتى الآن.</p>
+        <h3>معرّف المنتج</h3><p>لا يوجد — استخدم خيار "ليس لدي معرّف منتج" عند إنشاء العرض إذا كان الحساب/الفئة تسمح بذلك.</p>
+        <div id="missingFields"></div>
+        <button id="copyAllButton" class="secondary-button" type="button">نسخ الكل</button>
+        <button id="saveButton" class="primary-button" type="button">حفظ المحتوى</button>
+        <button class="secondary-button" type="button" disabled>الانتقال لإنشاء الصور — قريبًا</button>
+        <button id="backButton" class="secondary-button" type="button">الرجوع لتعديل البيانات</button>
+    </section>
 </main>
 
 <script>
@@ -60,6 +73,8 @@ const extractionSection = document.getElementById("extractionSection");
 const sourceStatuses = document.getElementById("sourceStatuses");
 const reviewBox = document.getElementById("reviewBox");
 const confirmButton = document.getElementById("confirmButton");
+const phase3Section = document.getElementById("phase3Section");
+let confirmedState = null;
 let lensResults = [];
 let extractionData = null;
 
@@ -123,8 +138,26 @@ useButton.addEventListener("click", async () => {
 confirmButton.addEventListener("click", () => {
     const confirmed = {...extractionData.agreed};
     reviewBox.querySelectorAll("fieldset").forEach(field => { const choice = field.querySelector("input:checked"); if (choice && choice.value !== "ignore") confirmed[field.querySelector("legend").textContent] = extractionData.conflicts[field.querySelector("legend").textContent][Number(choice.value)]; });
-    statusBox.innerHTML = `<div class="success-box"><strong>تم تأكيد بيانات المنتج بنجاح</strong><p>كود المنتج: ${esc(document.getElementById("productCode").value)}</p><pre>${esc(JSON.stringify({product_code: document.getElementById("productCode").value, confirmed_attributes: confirmed, selected_sources: lensResults.filter((_, i) => resultsGrid.querySelector(`input[data-index="${i}"]:checked`))}, null, 2))}</pre></div>`;
+    confirmedState = {product_code: document.getElementById("productCode").value, confirmed_attributes: confirmed, selected_sources: lensResults.filter((_, i) => resultsGrid.querySelector(`input[data-index="${i}"]:checked`))};
+    fetch("/api/creation/generate-content", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(confirmedState)}).then(response => response.json()).then(data => {
+        if (!data.success) throw new Error();
+        form.hidden = true; resultsSection.hidden = true; extractionSection.hidden = true; phase3Section.hidden = false; renderPhase3(data);
+        statusBox.innerHTML = `<div class="success-box"><strong>تم تأكيد بيانات المنتج بنجاح</strong></div>`;
+    }).catch(() => showError("تعذر تجهيز المحتوى. حاول مرة أخرى."));
 });
+
+function renderPhase3(data) {
+    finalSku.textContent = data.product_code;
+    const fields = [["عنوان المنتج", data.title], ...data.bullets.map((value, i) => [`النقطة الرئيسية ${i + 1}`, value]), ["وصف المنتج", data.description]];
+    listingFields.innerHTML = fields.map(([label, value]) => `<div class="listing-field"><label>${esc(label)}</label><textarea data-copy="true">${esc(value)}</textarea><button class="secondary-button copy-button" type="button">نسخ</button></div>`).join("");
+    categoryText.textContent = data.category || "لم يتم تحديد تصنيف موثوق حتى الآن.";
+    missingFields.innerHTML = data.missing.length ? `<h3>بيانات ناقصة تحتاج إدخال يدوي</h3><p>${data.missing.map(esc).join("، ")}</p>` : "";
+    listingFields.querySelectorAll(".copy-button").forEach(button => button.addEventListener("click", () => navigator.clipboard.writeText(button.previousElementSibling.value)));
+}
+const finalSku = document.getElementById("finalSku"), listingFields = document.getElementById("listingFields"), categoryText = document.getElementById("categoryText"), missingFields = document.getElementById("missingFields");
+copyAllButton.addEventListener("click", () => navigator.clipboard.writeText([...listingFields.querySelectorAll("textarea")].map((field, i) => `${i + 1}. ${field.value}`).join("\n")));
+saveButton.addEventListener("click", () => showError("تم حفظ المحتوى في جلسة الإنشاء الحالية."));
+backButton.addEventListener("click", () => { phase3Section.hidden = true; form.hidden = false; extractionSection.hidden = false; resultsSection.hidden = true; statusBox.innerHTML = ""; });
 </script>
 </body>
 </html>
