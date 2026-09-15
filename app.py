@@ -1548,19 +1548,14 @@ def api_creation_search():
 
         readable_results = []
         for result in results:
-            link = result.get("link", "")
-            # عنوان Lens النظيف يكفي كـ fallback موثوق لاستخراج هوية المنتج.
-            # لا نؤخر المستخدم بتحميل الصفحة الخارجية في هذه الحالة.
-            if is_valid_product_value("اسم المنتج", result.get("title", "")):
-                readable_results.append(result)
+            # لا نعرض إلا العروض التي ثبت مسبقًا أنها تحتوي على معلومة منتج
+            # قابلة للاستخدام. نحفظ هذه المعلومة مع البطاقة حتى لا تعتمد
+            # مرحلة الاختيار على قراءة الموقع الخارجي مرة ثانية.
+            creation_facts = creation_source_facts(result)
+            if not creation_facts:
                 continue
-            if not safe_external_url(link):
-                continue
-            try:
-                if extract_product_facts(link):
-                    readable_results.append(result)
-            except Exception:
-                continue
+            result["creation_facts"] = creation_facts
+            readable_results.append(result)
         results = readable_results
 
         return jsonify({
@@ -1709,6 +1704,38 @@ def semanticize_facts(title, facts):
     return {key: value for key, value in normalized.items() if value and is_valid_product_value(key, value)}
 
 
+def clean_creation_facts(facts):
+
+    if not isinstance(facts, dict):
+        return {}
+    blocked = ("brand", "manufacturer", "seller", "store", "company", "ماركة", "الشركة", "المصنع")
+    cleaned = {}
+    for key, value in facts.items():
+        key = clean_text(key)
+        value = clean_product_fact(key, value)
+        if not key or not value:
+            continue
+        if any(word in normalize_fact(f"{key} {value}") for word in blocked):
+            continue
+        cleaned[key] = value
+    return cleaned
+
+
+def creation_source_facts(result):
+
+    title = clean_text(result.get("title", ""))
+    title_facts = clean_creation_facts(semantic_title_facts(title))
+    if title_facts:
+        return title_facts
+    link = clean_text(result.get("link", ""))
+    if not safe_external_url(link):
+        return {}
+    try:
+        return clean_creation_facts(semanticize_facts(title, extract_product_facts(link)))
+    except Exception:
+        return {}
+
+
 def extract_product_facts(url):
 
     response = requests.get(
@@ -1763,7 +1790,7 @@ def api_creation_extract():
     product_code = payload.get("product_code", "")
     selected = payload.get("selected_sources", [])
     if not product_code or not isinstance(selected, list) or not selected:
-        return jsonify({"success": False, "error": "تعذر استخراج بيانات كافية من العروض المختارة. جرب اختيار عروض أخرى."}), 400
+        return jsonify({"success": False, "error": "تعذر تجهيز العروض المختارة."}), 400
     if len(selected) > 5:
         return jsonify({"success": False, "error": "يمكنك اختيار 5 عروض كحد أقصى."}), 400
     attributes = {}
@@ -1771,7 +1798,10 @@ def api_creation_extract():
     for source in selected:
         url = source.get("link", "") if isinstance(source, dict) else ""
         entry = {"title": clean_text(source.get("title", "")), "source": clean_text(source.get("source", "") or get_domain(url)), "url": url, "status": "تعذر قراءة هذا العرض", "attributes": {}}
-        if safe_external_url(url):
+        entry["attributes"] = clean_creation_facts(source.get("creation_facts"))
+        if entry["attributes"]:
+            entry["status"] = "تم تجهيز البيانات"
+        elif safe_external_url(url):
             try:
                 entry["attributes"] = semanticize_facts(entry["title"], extract_product_facts(url))
                 entry["status"] = "تم استخراج البيانات" if entry["attributes"] else "تعذر قراءة هذا العرض"
@@ -1799,7 +1829,7 @@ def api_creation_extract():
         else:
             conflicts[key] = list(values.values())
     if not any(item["attributes"] for item in statuses):
-        return jsonify({"success": True, "available": False, "statuses": statuses, "message": "تعذر استخراج بيانات كافية من العروض المختارة. جرب اختيار عروض أخرى."})
+        return jsonify({"success": True, "available": False, "statuses": statuses})
     return jsonify({"success": True, "available": True, "statuses": statuses, "agreed": agreed, "conflicts": conflicts, "missing": [], "extracted_count": sum(len(values) for values in attributes.values()), "offer_count": len(selected)})
 
 

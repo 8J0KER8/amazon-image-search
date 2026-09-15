@@ -129,31 +129,31 @@ form.addEventListener("submit", async event => {
             if (count > 5) { input.checked = false; showError("يمكنك اختيار 5 عروض كحد أقصى."); }
             updateCount();
         }));
-        updateCount(); resultsSection.hidden = false; statusBox.innerHTML = "";
+        updateCount(); resultsSection.style.display = ""; resultsGrid.style.display = ""; resultsSection.hidden = false; statusBox.innerHTML = "";
     } catch (error) { showError("حصل خطأ أثناء البحث. حاول مرة أخرى."); }
     finally { searchButton.disabled = false; }
 });
 
 useButton.addEventListener("click", async () => {
-    resultsSection.hidden = true;
-    resultsSection.style.display = "none";
-    resultsGrid.style.display = "none";
     const selected = [...resultsGrid.querySelectorAll("input:checked")].map(input => lensResults[Number(input.dataset.index)]);
     useButton.disabled = true; statusBox.innerHTML = `<div class="loading-box"><strong>بنفحص العروض المختارة...</strong></div>`;
     try {
         const response = await fetch("/api/creation/extract", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ product_code: document.getElementById("productCode").value, selected_sources: selected }) });
         const data = await response.json();
         if (!response.ok || !data.success) throw new Error(data.message);
+        if (!data.available) { resultsSection.style.display = ""; resultsGrid.style.display = ""; resultsSection.hidden = false; statusBox.innerHTML = ""; return; }
+        resultsSection.hidden = true;
+        resultsSection.style.display = "none";
+        resultsGrid.style.display = "none";
         extractionData = data; extractionSection.hidden = false; statusBox.innerHTML = "";
         const readableStatuses = data.statuses.filter(item => item.attributes && Object.keys(item.attributes).length);
         sourceStatuses.innerHTML = readableStatuses.length ? `<details><summary>المصادر المستخدمة (${readableStatuses.length})</summary><ul>${readableStatuses.map(item => `<li>${esc(item.title)} — ${esc(item.source)} — <a href="${esc(item.url)}" target="_blank">${esc(item.url)}</a></li>`).join("")}</ul></details>` : "";
-        if (!data.available) { reviewBox.innerHTML = `<div class="error-box">${esc(data.message)}</div>`; return; }
         const agreed = Object.entries(data.agreed).map(([key, item]) => `<div class="editable-fact"><label>${esc(key)}</label><input data-agreed-key="${esc(key)}" value="${esc(item.value)}"><span>✓ متفق عليه</span></div>`).join("");
         const conflicts = Object.entries(data.conflicts).map(([key, options]) => `<fieldset><legend>${esc(key)}</legend>${options.map((item, i) => `<label><input type="radio" name="conflict-${esc(key)}" value="${i}"> ${esc(item.value)} <small>(${esc(item.sources.join(", "))})</small></label>`).join("")}<label><input type="radio" name="conflict-${esc(key)}" value="ignore"> تجاهل هذه الخاصية</label></fieldset>`).join("");
         reviewBox.innerHTML = `<p class="extraction-summary">تم استخراج ${data.extracted_count} بيانات موثوقة من ${data.offer_count} عروض.</p><div class="success-box"><h3>بيانات المنتج المستخرجة</h3>${agreed || "لا توجد"}</div><div class="review-conflicts"><h3>بيانات تحتاج مراجعة</h3>${conflicts || "لا توجد"}</div>`;
         reviewBox.querySelectorAll("input").forEach(input => input.addEventListener("change", () => confirmButton.disabled = [...reviewBox.querySelectorAll("fieldset")].some(field => !field.querySelector("input:checked"))));
         confirmButton.disabled = reviewBox.querySelectorAll("fieldset").length > 0;
-    } catch (error) { showError("حصل خطأ أثناء استخراج البيانات. حاول مرة أخرى."); }
+    } catch (error) { resultsSection.style.display = ""; resultsGrid.style.display = ""; resultsSection.hidden = false; showError("حصل خطأ أثناء استخراج البيانات. حاول مرة أخرى."); }
     finally { useButton.disabled = false; }
 });
 
