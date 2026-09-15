@@ -1622,14 +1622,16 @@ def normalize_fact(value):
     return re.sub(r"\s+", " ", value).strip().lower()
 
 
-GARBAGE_TOKENS = ("font-", "padding", "margin", "display:", "color:", "background", "var(", "url(", "px", "rem", "line-height", "letter-spacing", "text-decoration", "overflow", "<script", "<style", "class=", "navbar", "widget", "schema\":", "machine_identifier", "__stripe", "function", "javascript", "css", "html", "selector")
+GARBAGE_TOKENS = ("font-", "padding", "margin", "display:", "color:", "background", "var(", "url(", "px", "rem", "line-height", "letter-spacing", "vertical-align", "text-decoration", "overflow", "border", "position:", "!important", "<script", "<style", "</", "/> ", "class=", "style=", "aria-", "data-", "section-id", "navbar", "widget", "badge-", "schema\":", "machine_identifier", "__stripe", "function", "javascript", "css", "html", "selector", "\\u003c", "\\u003e", "&lt;", "&gt;")
 
 
-def valid_product_value(label, value):
+def is_valid_product_value(label, value):
 
     value = clean_text(value)
     lowered = normalize_fact(value)
-    if not value or any(token in lowered for token in GARBAGE_TOKENS):
+    if not value or "/>" in lowered or any(token in lowered for token in GARBAGE_TOKENS) or re.search(r"<[^>]+>|\b(?:class|style|aria|data)-[\w-]+\s*=", lowered):
+        return False
+    if re.fullmatch(r"\d+(?:[.,]\d+)?", lowered):
         return False
     if label in ("الوزن", "السعة", "الكمية") and not re.search(r"(?:\d+[\s]*(?:g|kg|gram|grams|كجم|جم|ml|l|مل|ل|قطعة|pcs|piece))", lowered, re.IGNORECASE):
         return False
@@ -1638,6 +1640,9 @@ def valid_product_value(label, value):
     if label == "اللون" and re.fullmatch(r"#?[0-9a-f]{3,8}", lowered):
         return False
     return True
+
+
+valid_product_value = is_valid_product_value
 
 
 def extract_product_facts(url):
@@ -1669,15 +1674,8 @@ def extract_product_facts(url):
                     value = node.get(key)
                     if isinstance(value, (str, int, float)) and valid_product_value(label, value) and label != "الوصف factual":
                         facts[label] = clean_text(value)
-    text = clean_text(" ".join(parser.text_parts))
-    labels = {"اللون": r"(?:color|اللون)\s*[:：-]\s*([^|]{1,80})", "الخامة": r"(?:material|الخامة)\s*[:：-]\s*([^|]{1,80})", "الوزن": r"(?:weight|الوزن)\s*[:：-]\s*([^|]{1,80})", "الموديل": r"(?:model|الموديل)\s*[:：-]\s*([^|]{1,80})"}
-    for label, pattern in labels.items():
-        if label not in facts:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match and valid_product_value(label, match.group(1)):
-                facts[label] = clean_text(match.group(1))
     blocked = ("brand", "manufacturer", "seller", "store", "company", "ماركة", "الشركة", "المصنع")
-    return {key: value for key, value in facts.items() if not any(word in normalize_fact(value) for word in blocked)}
+    return {key: value for key, value in facts.items() if is_valid_product_value(key, value) and not any(word in normalize_fact(value) for word in blocked)}
 
 
 @app.route("/api/creation/extract", methods=["POST"])
@@ -1727,8 +1725,10 @@ def api_creation_generate_content():
     clean_attributes = {}
     for key, item in attributes.items():
         value = item.get("value", "") if isinstance(item, dict) else item
-        if key and isinstance(value, str) and value.strip() and not any(word in normalize_fact(value) for word in blocked):
+        if key and isinstance(value, str) and is_valid_product_value(key, value) and not any(word in normalize_fact(value) for word in blocked):
             clean_attributes[clean_text(key)] = clean_text(value)
+    if not clean_attributes:
+        return jsonify({"success": False, "error": "البيانات المستخرجة غير كافية لإنشاء محتوى موثوق. ارجع واختر عروضًا أوضح أو أدخل البيانات الناقصة."}), 400
     title = clean_attributes.get("اسم المنتج") or clean_attributes.get("نوع المنتج") or "منتج عام"
     title = " ".join([title] + [value for key, value in clean_attributes.items() if key not in ("اسم المنتج", "نوع المنتج")][:4])
     bullets = [f"{key}: {value}" for key, value in clean_attributes.items() if key not in ("اسم المنتج", "نوع المنتج")][:5]
