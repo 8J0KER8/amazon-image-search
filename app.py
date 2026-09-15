@@ -1484,6 +1484,82 @@ def too_large(error):
     }), 413
 
 
+@app.route("/creation")
+def creation_page():
+
+    return render_template(
+        "creation.html"
+    )
+
+
+@app.route(
+    "/api/creation/search",
+    methods=["POST"]
+)
+def api_creation_search():
+
+    product_code = request.form.get("product_code", "")
+
+    if not product_code.strip():
+
+        return jsonify({
+            "success": False,
+            "error": "من فضلك اكتب كود المنتج."
+        }), 400
+
+    if "image" not in request.files or not request.files["image"].filename:
+
+        return jsonify({
+            "success": False,
+            "error": "من فضلك اختر صورة المنتج."
+        }), 400
+
+    image_file = request.files["image"]
+
+    if not allowed_file(image_file.filename):
+
+        return jsonify({
+            "success": False,
+            "error": "حصل خطأ أثناء البحث. حاول مرة أخرى."
+        }), 400
+
+    temp_path = None
+
+    try:
+
+        temp_path = prepare_image(image_file)
+        image_id = upload_image_to_serpapi(temp_path)
+        lens_data = google_lens(
+            image_id,
+            search_type="visual_matches"
+        )
+        results = get_visual_results(lens_data)
+
+        return jsonify({
+            "success": True,
+            "product_code": product_code,
+            "count": len(results),
+            "results": results,
+            "message": "ملقيناش عروض مشابهة للصورة." if not results else ""
+        })
+
+    except Exception:
+
+        return jsonify({
+            "success": False,
+            "error": "حصل خطأ أثناء البحث. حاول مرة أخرى."
+        }), 500
+
+    finally:
+
+        if temp_path and os.path.exists(temp_path):
+
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+
+
 # =========================================================
 # LOCAL RUN
 # =========================================================

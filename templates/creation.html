@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>إنشاء منتج</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header>
+    <div class="nav-container">
+        <div class="logo">Amazon <span>Image Search</span></div>
+        <nav>
+            <a href="/">البحث بالصورة</a>
+            <a href="/analysis">تحليل الأسعار</a>
+            <a href="/creation" class="active">إنشاء منتج</a>
+        </nav>
+    </div>
+</header>
+
+<main class="container creation-page">
+    <section class="hero">
+        <div class="page-badge">مرحلة 1</div>
+        <h1>إنشاء منتج</h1>
+        <p>ابحث عن عروض مشابهة لمنتجك بالصورة واختر العروض المناسبة يدويًا</p>
+    </section>
+
+    <form id="creationForm" class="upload-card">
+        <label class="creation-label" for="productCode">كود المنتج</label>
+        <input id="productCode" name="product_code" class="creation-input" type="text" required>
+        <label class="creation-label" for="imageInput">صورة المنتج</label>
+        <input id="imageInput" name="image" class="creation-input" type="file" accept="image/jpeg,image/png,image/webp" required>
+        <button id="searchButton" class="primary-button" type="submit">ابدأ البحث</button>
+    </form>
+
+    <div id="status" class="status"></div>
+    <section id="resultsSection" class="creation-results" hidden>
+        <div class="section-title"><h2>العروض المشابهة</h2><span id="selectedCount">تم اختيار 0 عروض</span></div>
+        <div id="resultsGrid" class="creation-grid"></div>
+        <button id="useButton" class="primary-button" type="button" disabled>استخدام العروض المختارة</button>
+    </section>
+</main>
+
+<script>
+const form = document.getElementById("creationForm");
+const statusBox = document.getElementById("status");
+const resultsSection = document.getElementById("resultsSection");
+const resultsGrid = document.getElementById("resultsGrid");
+const selectedCount = document.getElementById("selectedCount");
+const useButton = document.getElementById("useButton");
+const searchButton = document.getElementById("searchButton");
+
+function esc(value) { const div = document.createElement("div"); div.textContent = value || ""; return div.innerHTML; }
+function updateCount() {
+    const count = resultsGrid.querySelectorAll("input:checked").length;
+    selectedCount.textContent = `تم اختيار ${count} عروض`;
+    useButton.disabled = count === 0;
+}
+function showError(message) { statusBox.innerHTML = `<div class="error-box">${esc(message)}</div>`; }
+
+form.addEventListener("submit", async event => {
+    event.preventDefault();
+    const code = document.getElementById("productCode").value;
+    const image = document.getElementById("imageInput").files[0];
+    if (!code.trim()) return showError("من فضلك اكتب كود المنتج.");
+    if (!image) return showError("من فضلك اختر صورة المنتج.");
+    statusBox.innerHTML = `<div class="loading-box"><strong>بندور على عروض مشابهة...</strong></div>`;
+    resultsSection.hidden = true; searchButton.disabled = true;
+    const data = new FormData(form);
+    try {
+        const response = await fetch("/api/creation/search", { method: "POST", body: data });
+        const payload = await response.json();
+        if (!response.ok || !payload.success) throw new Error(payload.error || "حصل خطأ أثناء البحث. حاول مرة أخرى.");
+        if (!payload.results.length) return showError("ملقيناش عروض مشابهة للصورة.");
+        resultsGrid.innerHTML = payload.results.map((item, index) => `<article class="creation-card">
+            ${item.image || item.thumbnail ? `<img src="${esc(item.image || item.thumbnail)}" alt="" loading="lazy">` : ""}
+            <div class="creation-card-body"><h3>${esc(item.title)}</h3><p>${esc(item.source || item.domain)}</p><strong>${esc(item.price || "السعر غير متاح")}</strong>
+            <a href="${esc(item.link)}" target="_blank" rel="noopener noreferrer">فتح العرض</a>
+            <label><input type="checkbox" data-index="${index}"> اختيار هذا العرض</label></div></article>`).join("");
+        resultsGrid.querySelectorAll("input").forEach(input => input.addEventListener("change", updateCount));
+        updateCount(); resultsSection.hidden = false; statusBox.innerHTML = "";
+    } catch (error) { showError("حصل خطأ أثناء البحث. حاول مرة أخرى."); }
+    finally { searchButton.disabled = false; }
+});
+
+useButton.addEventListener("click", () => {
+    const selected = [...resultsGrid.querySelectorAll("input:checked")].map(input => input.closest("article"));
+    const details = selected.map(card => `<li>${esc(card.querySelector("h3").textContent)} — ${esc(card.querySelector("p").textContent)}</li>`).join("");
+    statusBox.innerHTML = `<div class="success-box"><strong>تم اختيار العروض</strong><p>كود المنتج: ${esc(document.getElementById("productCode").value)}</p><p>عدد العروض: ${selected.length}</p><ul>${details}</ul></div>`;
+});
+</script>
+</body>
+</html>

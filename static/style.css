@@ -1300,3 +1300,20 @@ button {
     }
 
 }
+
+.creation-page .upload-card { max-width: 760px; margin: 0 auto 25px; }
+.creation-label { display: block; font-weight: bold; margin: 0 0 8px; }
+.creation-input { width: 100%; padding: 13px; border: 1px solid #d1d5db; border-radius: 9px; margin: 0 0 18px; font: inherit; }
+.creation-page .primary-button { display: block; margin: 5px auto 0; }
+.creation-results { text-align: center; }
+.creation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 18px; margin: 20px 0 25px; text-align: right; }
+.creation-card { background: white; border-radius: 14px; overflow: hidden; box-shadow: 0 5px 20px rgba(0,0,0,.07); }
+.creation-card > img { width: 100%; height: 190px; object-fit: contain; background: #fafafa; }
+.creation-card-body { padding: 15px; }
+.creation-card h3 { margin: 0 0 8px; font-size: 16px; line-height: 1.5; }
+.creation-card p { color: #6b7280; margin: 0 0 10px; }
+.creation-card strong { display: block; margin-bottom: 12px; }
+.creation-card a { color: #9a5900; font-weight: bold; display: block; margin-bottom: 13px; }
+.creation-card label { cursor: pointer; font-weight: bold; }
+.creation-results > .primary-button { margin: 0 auto; }
+.success-box { background: #ecfdf5; color: #065f46; padding: 18px; border-radius: 12px; text-align: right; }
