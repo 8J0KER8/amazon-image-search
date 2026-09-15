@@ -117,6 +117,9 @@ form.addEventListener("submit", async event => {
 });
 
 useButton.addEventListener("click", async () => {
+    resultsSection.hidden = true;
+    resultsSection.style.display = "none";
+    resultsGrid.style.display = "none";
     const selected = [...resultsGrid.querySelectorAll("input:checked")].map(input => lensResults[Number(input.dataset.index)]);
     useButton.disabled = true; statusBox.innerHTML = `<div class="loading-box"><strong>بنفحص العروض المختارة...</strong></div>`;
     try {
@@ -124,7 +127,8 @@ useButton.addEventListener("click", async () => {
         const data = await response.json();
         if (!response.ok || !data.success) throw new Error(data.message);
         extractionData = data; extractionSection.hidden = false; statusBox.innerHTML = "";
-        sourceStatuses.innerHTML = `<strong>المصادر المختارة</strong><ul>${data.statuses.map(item => `<li>${esc(item.title)} — ${esc(item.source)} — <a href="${esc(item.url)}" target="_blank">${esc(item.url)}</a><br>${esc(item.status)}</li>`).join("")}</ul>`;
+        const readableStatuses = data.statuses.filter(item => item.attributes && Object.keys(item.attributes).length);
+        sourceStatuses.innerHTML = readableStatuses.length ? `<strong>المصادر التي تم قراءة بياناتها</strong><ul>${readableStatuses.map(item => `<li>${esc(item.title)} — ${esc(item.source)} — <a href="${esc(item.url)}" target="_blank">${esc(item.url)}</a><br>تم استخراج البيانات</li>`).join("")}</ul>` : "";
         if (!data.available) { reviewBox.innerHTML = `<div class="error-box">${esc(data.message)}</div>`; return; }
         const agreed = Object.entries(data.agreed).map(([key, item]) => `<p><strong>${esc(key)}:</strong> ${esc(item.value)} <span>✓ متفق عليه</span></p>`).join("");
         const conflicts = Object.entries(data.conflicts).map(([key, options]) => `<fieldset><legend>${esc(key)}</legend>${options.map((item, i) => `<label><input type="radio" name="conflict-${esc(key)}" value="${i}"> ${esc(item.value)} <small>(${esc(item.sources.join(", "))})</small></label>`).join("")}<label><input type="radio" name="conflict-${esc(key)}" value="ignore"> تجاهل هذه الخاصية</label></fieldset>`).join("");
