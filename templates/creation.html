@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>إنشاء منتج</title>
+    <title>Zahed Hand | إنشاء منتج</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
 <header>
     <div class="nav-container">
-        <div class="logo">Amazon <span>Image Search</span></div>
+        <a class="logo" href="/" aria-label="Zahed Hand"><span class="logo-mark">ZH</span><span>Zahed</span><span class="logo-accent">Hand</span></a>
         <nav>
             <a href="/">البحث بالصورة</a>
             <a href="/analysis">تحليل الأسعار</a>
@@ -29,7 +29,11 @@
         <label class="creation-label" for="productCode">كود المنتج</label>
         <input id="productCode" name="product_code" class="creation-input" type="text" required>
         <label class="creation-label" for="imageInput">صورة المنتج</label>
-        <input id="imageInput" name="image" class="creation-input" type="file" accept="image/jpeg,image/png,image/webp" required>
+        <div class="file-picker-wrap">
+            <input id="imageInput" name="image" type="file" accept="image/jpeg,image/png,image/webp" required>
+            <label class="file-picker" for="imageInput">اختَر صورة المنتج</label>
+            <span id="fileName" class="file-name">لم يتم اختيار صورة</span>
+        </div>
         <button id="searchButton" class="primary-button" type="submit">ابدأ البحث</button>
     </form>
 
@@ -78,6 +82,8 @@ const sourceStatuses = document.getElementById("sourceStatuses");
 const reviewBox = document.getElementById("reviewBox");
 const confirmButton = document.getElementById("confirmButton");
 const phase3Section = document.getElementById("phase3Section");
+const imageInput = document.getElementById("imageInput");
+const fileName = document.getElementById("fileName");
 let confirmedState = null;
 let lensResults = [];
 let extractionData = null;
@@ -90,6 +96,10 @@ function updateCount() {
     resultsGrid.querySelectorAll("input:not(:checked)").forEach(input => input.disabled = count >= 5);
 }
 function showError(message) { statusBox.innerHTML = `<div class="error-box">${esc(message)}</div>`; }
+
+imageInput.addEventListener("change", () => {
+    fileName.textContent = imageInput.files[0] ? imageInput.files[0].name : "لم يتم اختيار صورة";
+});
 
 form.addEventListener("submit", async event => {
     event.preventDefault();

@@ -16,7 +16,9 @@ body {
         Arial,
         sans-serif;
 
-    background: #f3f4f6;
+    background:
+        radial-gradient(circle at top right, #e7f3f2 0, transparent 34%),
+        #f5f7f8;
 
     color: #111827;
 }
@@ -27,13 +29,11 @@ body {
 ===================================================== */
 
 header {
-    background: #131921;
+    background: linear-gradient(120deg, #102b3c, #17475b);
 
     color: white;
 
-    box-shadow:
-        0 2px 10px
-        rgba(0, 0, 0, 0.15);
+    box-shadow: 0 8px 24px rgba(16, 43, 60, 0.18);
 }
 
 
@@ -55,19 +55,44 @@ header {
 
 
 .logo {
+    display: inline-flex;
+
+    align-items: center;
+
+    gap: 7px;
+
+    color: white;
+
     font-size: 22px;
 
     font-weight: 800;
+
+    text-decoration: none;
 
     white-space: nowrap;
 
     direction: ltr;
 }
 
+.logo-mark {
+    display: inline-grid;
 
-.logo span {
-    color: #ff9900;
+    place-items: center;
+
+    width: 32px;
+
+    height: 32px;
+
+    border-radius: 10px;
+
+    background: #e5ab45;
+
+    color: #102b3c;
+
+    font-size: 12px;
 }
+
+.logo-accent { color: #e5ab45; }
 
 
 nav {
@@ -100,9 +125,9 @@ nav a:hover {
 
 
 nav a.active {
-    background: #ff9900;
+    background: #e5ab45;
 
-    color: #111827;
+    color: #102b3c;
 
     font-weight: bold;
 }
@@ -172,15 +197,13 @@ nav a.active {
 ===================================================== */
 
 .upload-card {
-    background: white;
+    background: rgba(255, 255, 255, 0.94);
 
     padding: 27px;
 
     border-radius: 18px;
 
-    box-shadow:
-        0 8px 30px
-        rgba(0, 0, 0, 0.07);
+    box-shadow: 0 14px 35px rgba(16, 43, 60, 0.08);
 }
 
 
@@ -283,9 +306,9 @@ button {
 .primary-button {
     border: none;
 
-    background: #ff9900;
+    background: #e5ab45;
 
-    color: #111827;
+    color: #102b3c;
 
     padding: 13px 30px;
 
@@ -302,7 +325,7 @@ button {
 
 
 .primary-button:hover {
-    background: #ec8d00;
+    background: #d69a31;
 }
 
 
@@ -1304,6 +1327,11 @@ button {
 .creation-page .upload-card { max-width: 760px; margin: 0 auto 25px; }
 .creation-label { display: block; font-weight: bold; margin: 0 0 8px; }
 .creation-input { width: 100%; padding: 13px; border: 1px solid #d1d5db; border-radius: 9px; margin: 0 0 18px; font: inherit; }
+.file-picker-wrap { display: flex; align-items: center; gap: 12px; margin: 0 0 18px; padding: 11px 13px; border: 1px solid #c8d5d9; border-radius: 9px; background: #fcfefe; }
+.file-picker-wrap input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
+.file-picker { display: inline-block; padding: 9px 14px; border-radius: 7px; background: #e2f1ef; color: #155b59; font-weight: bold; cursor: pointer; white-space: nowrap; }
+.file-picker:hover { background: #cfe8e5; }
+.file-name { overflow: hidden; color: #64748b; text-overflow: ellipsis; white-space: nowrap; }
 .creation-page .primary-button { display: block; margin: 5px auto 0; }
 .creation-results { text-align: center; }
 .creation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 18px; margin: 20px 0 25px; text-align: right; }
@@ -1343,3 +1371,111 @@ button {
 .ready-status { color: #047857; font-weight: bold; margin-left: 12px; }
 .quality-review, .policy-review { margin-top: 22px; padding: 15px; border-radius: 10px; background: #f9fafb; }
 .policy-review { background: #fff7ed; color: #9a3412; }
+
+/* =====================================================
+   ZAHED HAND VISUAL REFINEMENTS
+===================================================== */
+
+.page-badge {
+    background: #e2f1ef;
+    color: #155b59;
+}
+
+.hero h1 {
+    color: #102b3c;
+    letter-spacing: -0.5px;
+}
+
+nav a {
+    border: 1px solid transparent;
+}
+
+nav a:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.primary-button,
+.secondary-button,
+.small-amazon-button,
+.amazon-button {
+    box-shadow: 0 5px 13px rgba(16, 43, 60, 0.1);
+}
+
+.primary-button:focus-visible,
+.secondary-button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+nav a:focus-visible {
+    outline: 3px solid rgba(229, 171, 69, 0.48);
+    outline-offset: 3px;
+}
+
+.creation-input,
+.editable-fact input,
+.listing-field textarea {
+    border-color: #c8d5d9;
+    background: #fcfefe;
+}
+
+.creation-input:focus,
+.editable-fact input:focus,
+.listing-field textarea:focus {
+    border-color: #2c7a7b;
+    box-shadow: 0 0 0 3px rgba(44, 122, 123, 0.12);
+    outline: none;
+}
+
+.creation-card,
+.image-plan-card,
+.stat-card,
+.product-card,
+.closest-product {
+    border: 1px solid rgba(16, 43, 60, 0.07);
+}
+
+.creation-card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.creation-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 26px rgba(16, 43, 60, 0.12);
+}
+
+.success-box {
+    border: 1px solid #bde5dd;
+}
+
+.review-conflicts,
+.phase3 {
+    box-shadow: 0 14px 35px rgba(16, 43, 60, 0.07);
+}
+
+@media (max-width: 700px) {
+    nav {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    nav a {
+        flex: initial;
+        padding: 9px 12px;
+        font-size: 14px;
+    }
+
+    .editable-fact,
+    .detail-row {
+        grid-template-columns: 1fr;
+        gap: 7px;
+    }
+
+    .detail-row .secondary-button {
+        justify-self: start;
+    }
+
+    .file-picker-wrap {
+        align-items: stretch;
+        flex-direction: column;
+    }
+}

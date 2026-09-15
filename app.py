@@ -1152,7 +1152,7 @@ def api_search():
         }), 504
 
 
-    except requests.RequestException as error:
+    except requests.RequestException:
 
         return jsonify({
 
@@ -1160,12 +1160,12 @@ def api_search():
                 False,
 
             "error":
-                f"حصلت مشكلة أثناء الاتصال: {error}"
+                "حصلت مشكلة أثناء الاتصال. جرّب تاني."
 
         }), 500
 
 
-    except Exception as error:
+    except Exception:
 
         return jsonify({
 
@@ -1173,7 +1173,7 @@ def api_search():
                 False,
 
             "error":
-                str(error)
+                "حصل خطأ أثناء البحث. جرّب تاني."
 
         }), 500
 
@@ -1425,7 +1425,7 @@ def api_analyze():
         }), 504
 
 
-    except requests.RequestException as error:
+    except requests.RequestException:
 
         return jsonify({
 
@@ -1433,12 +1433,12 @@ def api_analyze():
                 False,
 
             "error":
-                f"حصلت مشكلة أثناء الاتصال: {error}"
+                "حصلت مشكلة أثناء الاتصال. جرّب تاني."
 
         }), 500
 
 
-    except Exception as error:
+    except Exception:
 
         return jsonify({
 
@@ -1446,7 +1446,7 @@ def api_analyze():
                 False,
 
             "error":
-                str(error)
+                "حصل خطأ أثناء تحليل الأسعار. جرّب تاني."
 
         }), 500
 
@@ -1543,10 +1543,15 @@ def api_creation_search():
         readable_results = []
         for result in results:
             link = result.get("link", "")
+            # عنوان Lens النظيف يكفي كـ fallback موثوق لاستخراج هوية المنتج.
+            # لا نؤخر المستخدم بتحميل الصفحة الخارجية في هذه الحالة.
+            if is_valid_product_value("اسم المنتج", result.get("title", "")):
+                readable_results.append(result)
+                continue
             if not safe_external_url(link):
                 continue
             try:
-                if extract_product_facts(link) or is_valid_product_value("اسم المنتج", result.get("title", "")):
+                if extract_product_facts(link):
                     readable_results.append(result)
             except Exception:
                 continue
@@ -1610,7 +1615,7 @@ def safe_external_url(value):
         return False
     try:
         addresses = socket.getaddrinfo(parsed.hostname, None)
-        return all(not ipaddress.ip_address(item[4][0]).is_private for item in addresses)
+        return all(ipaddress.ip_address(item[4][0]).is_global for item in addresses)
     except (socket.gaierror, ValueError):
         return False
 
@@ -1703,7 +1708,7 @@ def extract_product_facts(url):
     response = requests.get(
         url,
         headers={"User-Agent": "Mozilla/5.0"},
-        timeout=15,
+        timeout=10,
         stream=True
     )
     response.raise_for_status()
@@ -1722,13 +1727,25 @@ def extract_product_facts(url):
             continue
         nodes = data if isinstance(data, list) else data.get("@graph", [data]) if isinstance(data, dict) else []
         for node in nodes:
-            if isinstance(node, dict) and str(node.get("@type", "")).lower() == "product":
-                for key, label in (("name", "اسم المنتج"), ("color", "اللون"), ("material", "الخامة"), ("model", "الموديل"), ("weight", "الوزن"), ("category", "نوع المنتج"), ("description", "الوصف factual")):
+            node_types = node.get("@type", []) if isinstance(node, dict) else []
+            node_types = [node_types] if isinstance(node_types, str) else node_types
+            if isinstance(node, dict) and any(str(node_type).lower() == "product" for node_type in node_types):
+                for key, label in (("name", "اسم المنتج"), ("color", "اللون"), ("material", "الخامة"), ("size", "المقاس"), ("model", "الموديل"), ("weight", "الوزن"), ("category", "نوع المنتج"), ("description", "الوصف factual")):
                     value = node.get(key)
                     if isinstance(value, (str, int, float)) and label != "الوصف factual":
                         cleaned = clean_product_fact(label, value)
                         if cleaned:
                             facts[label] = cleaned
+                for prop in node.get("additionalProperty", []):
+                    if not isinstance(prop, dict):
+                        continue
+                    prop_name = normalize_fact(prop.get("name", ""))
+                    prop_value = prop.get("value", "")
+                    labels = {"color": "اللون", "material": "الخامة", "size": "المقاس", "dimensions": "المقاس / الأبعاد", "weight": "الوزن", "model": "الموديل", "quantity": "الكمية", "number of items": "الكمية"}
+                    label = labels.get(prop_name)
+                    cleaned = clean_product_fact(label, prop_value) if label else ""
+                    if cleaned:
+                        facts[label] = cleaned
     blocked = ("brand", "manufacturer", "seller", "store", "company", "ماركة", "الشركة", "المصنع")
     return {key: value for key, value in facts.items() if is_valid_product_value(key, value) and not any(word in normalize_fact(value) for word in blocked)}
 
