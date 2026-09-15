@@ -1317,3 +1317,8 @@ button {
 .creation-card label { cursor: pointer; font-weight: bold; }
 .creation-results > .primary-button { margin: 0 auto; }
 .success-box { background: #ecfdf5; color: #065f46; padding: 18px; border-radius: 12px; text-align: right; }
+.review-conflicts { background: white; margin-top: 18px; padding: 18px; border-radius: 12px; text-align: right; }
+.review-conflicts fieldset { border: 1px solid #e5e7eb; margin: 12px 0; padding: 12px; }
+.review-conflicts label { display: block; margin: 9px 0; }
+.success-box a { color: #065f46; word-break: break-all; }
+.success-box pre { white-space: pre-wrap; direction: ltr; text-align: left; background: #fff; padding: 12px; }

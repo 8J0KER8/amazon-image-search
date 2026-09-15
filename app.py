@@ -2,6 +2,11 @@ import os
 import re
 import statistics
 import tempfile
+import json
+import ipaddress
+import socket
+from html import unescape
+from html.parser import HTMLParser
 
 from io import BytesIO
 from urllib.parse import urlparse
@@ -1558,6 +1563,124 @@ def api_creation_search():
                 os.remove(temp_path)
             except OSError:
                 pass
+
+
+class ProductPageParser(HTMLParser):
+
+    def __init__(self):
+        super().__init__()
+        self.text_parts = []
+        self.jsonld = []
+        self._script = False
+        self._script_text = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() == "script" and dict(attrs).get("type", "").lower() == "application/ld+json":
+            self._script = True
+            self._script_text = []
+
+    def handle_endtag(self, tag):
+        if tag.lower() == "script" and self._script:
+            self.jsonld.append("".join(self._script_text))
+            self._script = False
+
+    def handle_data(self, data):
+        if self._script:
+            self._script_text.append(data)
+        elif data.strip():
+            self.text_parts.append(data.strip())
+
+
+def safe_external_url(value):
+
+    parsed = urlparse(clean_text(value))
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return False
+    try:
+        addresses = socket.getaddrinfo(parsed.hostname, None)
+        return all(not ipaddress.ip_address(item[4][0]).is_private for item in addresses)
+    except (socket.gaierror, ValueError):
+        return False
+
+
+def normalize_fact(value):
+
+    value = clean_text(unescape(str(value)))
+    value = re.sub(r"[،,:;]+", " ", value)
+    return re.sub(r"\s+", " ", value).strip().lower()
+
+
+def extract_product_facts(url):
+
+    response = requests.get(
+        url,
+        headers={"User-Agent": "Mozilla/5.0"},
+        timeout=15,
+        stream=True
+    )
+    response.raise_for_status()
+    body = b""
+    for chunk in response.iter_content(65536):
+        body += chunk
+        if len(body) > 2 * 1024 * 1024:
+            break
+    parser = ProductPageParser()
+    parser.feed(body.decode(response.encoding or "utf-8", errors="ignore"))
+    facts = {}
+    for raw in parser.jsonld:
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        nodes = data if isinstance(data, list) else data.get("@graph", [data]) if isinstance(data, dict) else []
+        for node in nodes:
+            if isinstance(node, dict) and str(node.get("@type", "")).lower() == "product":
+                for key, label in (("name", "اسم المنتج"), ("color", "اللون"), ("material", "الخامة"), ("model", "الموديل"), ("weight", "الوزن"), ("category", "نوع المنتج"), ("description", "الوصف factual")):
+                    value = node.get(key)
+                    if isinstance(value, (str, int, float)) and clean_text(value) and label != "الوصف factual":
+                        facts[label] = clean_text(value)
+    text = clean_text(" ".join(parser.text_parts))
+    labels = {"اللون": r"(?:color|اللون)\s*[:：-]\s*([^|]{1,80})", "الخامة": r"(?:material|الخامة)\s*[:：-]\s*([^|]{1,80})", "الوزن": r"(?:weight|الوزن)\s*[:：-]\s*([^|]{1,80})", "الموديل": r"(?:model|الموديل)\s*[:：-]\s*([^|]{1,80})"}
+    for label, pattern in labels.items():
+        if label not in facts:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match and clean_text(match.group(1)):
+                facts[label] = clean_text(match.group(1))
+    blocked = ("brand", "manufacturer", "seller", "store", "company", "ماركة", "الشركة", "المصنع")
+    return {key: value for key, value in facts.items() if not any(word in normalize_fact(value) for word in blocked)}
+
+
+@app.route("/api/creation/extract", methods=["POST"])
+def api_creation_extract():
+
+    payload = request.get_json(silent=True) or {}
+    product_code = payload.get("product_code", "")
+    selected = payload.get("selected_sources", [])
+    if not product_code or not isinstance(selected, list) or not selected:
+        return jsonify({"success": False, "error": "تعذر استخراج بيانات كافية من العروض المختارة. جرب اختيار عروض أخرى."}), 400
+    attributes = {}
+    statuses = []
+    for source in selected:
+        url = source.get("link", "") if isinstance(source, dict) else ""
+        entry = {"title": clean_text(source.get("title", "")), "source": clean_text(source.get("source", "") or get_domain(url)), "url": url, "status": "تعذر قراءة هذا العرض", "attributes": {}}
+        if safe_external_url(url):
+            try:
+                entry["attributes"] = extract_product_facts(url)
+                entry["status"] = "تم استخراج البيانات" if entry["attributes"] else "تعذر قراءة هذا العرض"
+            except Exception:
+                pass
+        statuses.append(entry)
+        for key, value in entry["attributes"].items():
+            attributes.setdefault(key, {}).setdefault(normalize_fact(value), {"value": value, "sources": []})["sources"].append(entry["source"])
+    agreed, conflicts = {}, {}
+    for key, values in attributes.items():
+        if len(values) == 1:
+            agreed[key] = next(iter(values.values()))
+        else:
+            conflicts[key] = list(values.values())
+    if not any(item["attributes"] for item in statuses):
+        return jsonify({"success": True, "available": False, "statuses": statuses, "message": "تعذر استخراج بيانات كافية من العروض المختارة. جرب اختيار عروض أخرى."})
+    return jsonify({"success": True, "available": True, "statuses": statuses, "agreed": agreed, "conflicts": conflicts, "missing": []})
 
 
 # =========================================================

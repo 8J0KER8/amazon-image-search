@@ -39,6 +39,13 @@
         <div id="resultsGrid" class="creation-grid"></div>
         <button id="useButton" class="primary-button" type="button" disabled>استخدام العروض المختارة</button>
     </section>
+
+    <section id="extractionSection" class="creation-results" hidden>
+        <div class="section-title"><h2>استخراج بيانات المنتج</h2></div>
+        <div id="sourceStatuses" class="success-box"></div>
+        <div id="reviewBox"></div>
+        <button id="confirmButton" class="primary-button" type="button" disabled>تأكيد البيانات</button>
+    </section>
 </main>
 
 <script>
@@ -49,6 +56,12 @@ const resultsGrid = document.getElementById("resultsGrid");
 const selectedCount = document.getElementById("selectedCount");
 const useButton = document.getElementById("useButton");
 const searchButton = document.getElementById("searchButton");
+const extractionSection = document.getElementById("extractionSection");
+const sourceStatuses = document.getElementById("sourceStatuses");
+const reviewBox = document.getElementById("reviewBox");
+const confirmButton = document.getElementById("confirmButton");
+let lensResults = [];
+let extractionData = null;
 
 function esc(value) { const div = document.createElement("div"); div.textContent = value || ""; return div.innerHTML; }
 function updateCount() {
@@ -72,7 +85,7 @@ form.addEventListener("submit", async event => {
         const payload = await response.json();
         if (!response.ok || !payload.success) throw new Error(payload.error || "حصل خطأ أثناء البحث. حاول مرة أخرى.");
         if (!payload.results.length) return showError("ملقيناش عروض مشابهة للصورة.");
-        resultsGrid.innerHTML = payload.results.map((item, index) => `<article class="creation-card">
+        lensResults = payload.results; resultsGrid.innerHTML = payload.results.map((item, index) => `<article class="creation-card">
             ${item.image || item.thumbnail ? `<img src="${esc(item.image || item.thumbnail)}" alt="" loading="lazy">` : ""}
             <div class="creation-card-body"><h3>${esc(item.title)}</h3><p>${esc(item.source || item.domain)}</p><strong>${esc(item.price || "السعر غير متاح")}</strong>
             <a href="${esc(item.link)}" target="_blank" rel="noopener noreferrer">فتح العرض</a>
@@ -83,10 +96,29 @@ form.addEventListener("submit", async event => {
     finally { searchButton.disabled = false; }
 });
 
-useButton.addEventListener("click", () => {
-    const selected = [...resultsGrid.querySelectorAll("input:checked")].map(input => input.closest("article"));
-    const details = selected.map(card => `<li>${esc(card.querySelector("h3").textContent)} — ${esc(card.querySelector("p").textContent)}</li>`).join("");
-    statusBox.innerHTML = `<div class="success-box"><strong>تم اختيار العروض</strong><p>كود المنتج: ${esc(document.getElementById("productCode").value)}</p><p>عدد العروض: ${selected.length}</p><ul>${details}</ul></div>`;
+useButton.addEventListener("click", async () => {
+    const selected = [...resultsGrid.querySelectorAll("input:checked")].map(input => lensResults[Number(input.dataset.index)]);
+    useButton.disabled = true; statusBox.innerHTML = `<div class="loading-box"><strong>بنفحص العروض المختارة...</strong></div>`;
+    try {
+        const response = await fetch("/api/creation/extract", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ product_code: document.getElementById("productCode").value, selected_sources: selected }) });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.message);
+        extractionData = data; extractionSection.hidden = false; statusBox.innerHTML = "";
+        sourceStatuses.innerHTML = `<strong>المصادر المختارة</strong><ul>${data.statuses.map(item => `<li>${esc(item.title)} — ${esc(item.source)} — <a href="${esc(item.url)}" target="_blank">${esc(item.url)}</a><br>${esc(item.status)}</li>`).join("")}</ul>`;
+        if (!data.available) { reviewBox.innerHTML = `<div class="error-box">${esc(data.message)}</div>`; return; }
+        const agreed = Object.entries(data.agreed).map(([key, item]) => `<p><strong>${esc(key)}:</strong> ${esc(item.value)} <span>✓ متفق عليه</span></p>`).join("");
+        const conflicts = Object.entries(data.conflicts).map(([key, options]) => `<fieldset><legend>${esc(key)}</legend>${options.map((item, i) => `<label><input type="radio" name="conflict-${esc(key)}" value="${i}"> ${esc(item.value)} <small>(${esc(item.sources.join(", "))})</small></label>`).join("")}<label><input type="radio" name="conflict-${esc(key)}" value="ignore"> تجاهل هذه الخاصية</label></fieldset>`).join("");
+        reviewBox.innerHTML = `<div class="success-box"><h3>بيانات متفق عليها</h3>${agreed || "لا توجد"}</div><div class="review-conflicts"><h3>بيانات تحتاج مراجعة</h3>${conflicts || "لا توجد"}</div>`;
+        reviewBox.querySelectorAll("input").forEach(input => input.addEventListener("change", () => confirmButton.disabled = [...reviewBox.querySelectorAll("fieldset")].some(field => !field.querySelector("input:checked"))));
+        confirmButton.disabled = reviewBox.querySelectorAll("fieldset").length > 0;
+    } catch (error) { showError("حصل خطأ أثناء استخراج البيانات. حاول مرة أخرى."); }
+    finally { useButton.disabled = false; }
+});
+
+confirmButton.addEventListener("click", () => {
+    const confirmed = {...extractionData.agreed};
+    reviewBox.querySelectorAll("fieldset").forEach(field => { const choice = field.querySelector("input:checked"); if (choice && choice.value !== "ignore") confirmed[field.querySelector("legend").textContent] = extractionData.conflicts[field.querySelector("legend").textContent][Number(choice.value)]; });
+    statusBox.innerHTML = `<div class="success-box"><strong>تم تأكيد بيانات المنتج بنجاح</strong><p>كود المنتج: ${esc(document.getElementById("productCode").value)}</p><pre>${esc(JSON.stringify({product_code: document.getElementById("productCode").value, confirmed_attributes: confirmed, selected_sources: lensResults.filter((_, i) => resultsGrid.querySelector(`input[data-index="${i}"]:checked`))}, null, 2))}</pre></div>`;
 });
 </script>
 </body>
