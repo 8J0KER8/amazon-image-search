@@ -382,7 +382,7 @@ def google_lens(
             data = response.json()
 
             if data.get("error"):
-                raise Exception(
+                raise requests.RequestException(
                     data["error"]
                 )
 
@@ -1883,17 +1883,22 @@ def api_market_analysis():
         product_query = find_product_query(initial_lens_data)
         results = initial_results
         if product_query and len(initial_results) < 4:
-            scoped_lens_data = google_lens(
-                image_id,
-                search_type="visual_matches",
-                country="eg",
-                query=product_query
-            )
-            scoped_results = egyptian_market_results(
-                get_visual_results(scoped_lens_data)
-            )
-            if scoped_results:
-                results = scoped_results
+            try:
+                scoped_lens_data = google_lens(
+                    image_id,
+                    search_type="visual_matches",
+                    country="eg",
+                    query=product_query
+                )
+                scoped_results = egyptian_market_results(
+                    get_visual_results(scoped_lens_data)
+                )
+                if scoped_results:
+                    results = scoped_results
+            except requests.RequestException:
+                app.logger.warning(
+                    "Scoped Google Lens search failed; keeping initial market results."
+                )
 
         if not results:
             return jsonify({
