@@ -2736,6 +2736,35 @@ def extract_listing_review_source(url):
     }
 
 
+def parse_listing_review_response(data):
+
+    if not isinstance(data, dict):
+        return None
+
+    status = clean_text(data.get("status", ""))
+    if status and status != "completed":
+        app.logger.warning(
+            "Listing review AI response did not complete: status=%s reason=%s",
+            status,
+            clean_text((data.get("incomplete_details") or {}).get("reason", "")),
+        )
+        return None
+
+    output = response_output_text(data).strip()
+    if output.startswith("```"):
+        output = re.sub(r"^```(?:json)?\s*", "", output, flags=re.IGNORECASE)
+        output = re.sub(r"\s*```$", "", output)
+
+    try:
+        start = output.index("{")
+        review, _ = json.JSONDecoder().raw_decode(output[start:])
+    except (TypeError, ValueError):
+        app.logger.warning("Listing review AI response did not contain a usable JSON object.")
+        return None
+
+    return review if isinstance(review, dict) else None
+
+
 def review_amazon_listing_with_ai(source):
 
     if not OPENAI_API_KEY:
@@ -2768,7 +2797,8 @@ def review_amazon_listing_with_ai(source):
                 "image count is greater than zero, never say images are absent, missing, or "
                 "insufficient, and do not create an images gap. Likewise, do not call a title, "
                 "description, feature list, or attribute missing when relevant visible page data "
-                "exists. Give concise practical recommendations only for directly observed issues."
+                "exists. Give concise practical recommendations only for directly observed issues. "
+                "Keep every array to four items or fewer."
             )
         },
         {
@@ -2797,7 +2827,7 @@ def review_amazon_listing_with_ai(source):
             "strengths": {
                 "type": "array",
                 "items": {"type": "string"},
-                "maxItems": 5
+                "maxItems": 4
             },
             "gaps": {
                 "type": "array",
@@ -2827,12 +2857,12 @@ def review_amazon_listing_with_ai(source):
                         "verification"
                     ]
                 },
-                "maxItems": 7
+                "maxItems": 4
             },
             "next_steps": {
                 "type": "array",
                 "items": {"type": "string"},
-                "maxItems": 5
+                "maxItems": 4
             }
         },
         "required": [
@@ -2853,7 +2883,7 @@ def review_amazon_listing_with_ai(source):
         json={
             "model": OPENAI_PRODUCT_MATCH_MODEL,
             "store": False,
-            "max_output_tokens": 900,
+            "max_output_tokens": 1100,
             "input": [{
                 "role": "user",
                 "content": content
@@ -2873,16 +2903,10 @@ def review_amazon_listing_with_ai(source):
     response.raise_for_status()
 
     try:
-        review = json.loads(
-            response_output_text(response.json())
-        )
-    except (TypeError, ValueError):
-        raise ListingReviewError("تعذر تجهيز تقييم العرض. حاول مرة أخرى.")
-
-    if not isinstance(review, dict):
-        raise ListingReviewError("تعذر تجهيز تقييم العرض. حاول مرة أخرى.")
-
-    return review
+        return parse_listing_review_response(response.json())
+    except ValueError:
+        app.logger.warning("Listing review AI response could not be decoded.")
+        return None
 
 
 def listing_review_mentions_absence(value):
@@ -3009,6 +3033,32 @@ def partial_listing_review():
     }
 
 
+def unavailable_ai_listing_review(source):
+
+    strengths = []
+    title = clean_text(source.get("title", ""))
+    if title and not is_generic_amazon_listing_title(title):
+        strengths.append("تمت قراءة عنوان المنتج من صفحة العرض.")
+
+    image_count = source.get("image_count", 0)
+    if image_count:
+        strengths.append(f"تم رصد {image_count} صور للمنتج من صفحة العرض.")
+
+    if clean_text(source.get("description", "")) or clean_text(source.get("visible_text", "")):
+        strengths.append("تمت قراءة محتوى ظاهر من صفحة العرض.")
+
+    return {
+        "overall_score": None,
+        "summary": "تمت قراءة بيانات العرض، لكن لم يكتمل التقييم الذكي هذه المرة.",
+        "strengths": strengths,
+        "gaps": [],
+        "next_steps": [],
+        "verification_notice": (
+            "تم عرض البيانات المقروءة فقط؛ لن نعرض أي نقاط ضعف غير مؤكدة."
+        ),
+    }
+
+
 def sanitize_listing_review(review, source):
 
     if source.get("read_status") != "verified":
@@ -3018,6 +3068,7 @@ def sanitize_listing_review(review, source):
         return partial_listing_review()
 
     cleaned_review = dict(review)
+    existing_notice = clean_text(cleaned_review.get("verification_notice", ""))
     original_gaps = review.get("gaps", [])
     original_gaps = original_gaps if isinstance(original_gaps, list) else []
 
@@ -3043,6 +3094,8 @@ def sanitize_listing_review(review, source):
         cleaned_review["verification_notice"] = (
             "تم استبعاد أي ملاحظة لا تستند إلى دليل ظاهر من الصفحة."
         )
+    elif existing_notice:
+        cleaned_review["verification_notice"] = existing_notice
     else:
         cleaned_review["verification_notice"] = ""
 
@@ -3069,11 +3122,18 @@ def api_listing_review():
 
     try:
         source = extract_listing_review_source(url)
-        review = (
-            review_amazon_listing_with_ai(source)
-            if source["read_status"] == "verified"
-            else partial_listing_review()
-        )
+        if source["read_status"] == "verified":
+            try:
+                review = review_amazon_listing_with_ai(source)
+            except requests.RequestException:
+                app.logger.warning("Listing review AI request failed; using a safe fallback.")
+                review = None
+
+            if review is None:
+                review = unavailable_ai_listing_review(source)
+        else:
+            review = partial_listing_review()
+
         review = sanitize_listing_review(review, source)
 
         return jsonify({
