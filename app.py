@@ -2221,9 +2221,43 @@ def api_creation_search():
 
 class ProductPageParser(HTMLParser):
 
+    PRODUCT_CONTENT_IDS = {
+        "productdescription",
+        "feature-bullets",
+        "featurebullets",
+        "detailbullets_feature_div",
+        "detailbulletsfeaturediv",
+        "productdetails_feature_div",
+        "productdetails_detailbullets_sections1",
+        "productdetails_techspec_section_1",
+        "productoverview_feature_div",
+        "productfactsdesktpexpander",
+        "productdetailsdbsections",
+        "proddetails",
+        "aplus",
+        "aplus_feature_div",
+        "aplus3p_feature_div",
+    }
+    PRODUCT_CONTENT_FEATURES = {
+        "productdescription",
+        "feature-bullets",
+        "detailbullets",
+        "productdetails",
+        "aplus",
+    }
+    PRODUCT_CONTENT_ITEMPROPS = {
+        "description",
+        "additionalproperty",
+    }
+    VOID_TAGS = {
+        "area", "base", "br", "col", "embed", "hr", "img", "input",
+        "link", "meta", "param", "source", "track", "wbr",
+    }
+
     def __init__(self):
         super().__init__()
         self.text_parts = []
+        self.product_text_parts = []
         self.jsonld = []
         self.meta = {}
         self.images = []
@@ -2235,6 +2269,22 @@ class ProductPageParser(HTMLParser):
         self._in_title = False
         self._product_title_tag = ""
         self._ignored_depth = 0
+        self._product_content_depth = 0
+
+    def _is_product_content_element(self, attributes):
+        element_id = clean_text(attributes.get("id", "")).lower()
+        feature_name = clean_text(
+            attributes.get("data-feature-name", "")
+        ).lower()
+        itemprops = {
+            clean_text(item).lower()
+            for item in attributes.get("itemprop", "").split()
+        }
+        return (
+            element_id in self.PRODUCT_CONTENT_IDS
+            or feature_name in self.PRODUCT_CONTENT_FEATURES
+            or bool(itemprops & self.PRODUCT_CONTENT_ITEMPROPS)
+        )
 
     def _add_image(self, value, product=False):
         image_url = clean_text(unescape(str(value or "")))
@@ -2277,6 +2327,12 @@ class ProductPageParser(HTMLParser):
             clean_text(key).lower(): clean_text(value)
             for key, value in attrs
         }
+
+        if tag not in self.VOID_TAGS and (
+            self._product_content_depth
+            or self._is_product_content_element(attributes)
+        ):
+            self._product_content_depth += 1
 
         if tag == "script" and attributes.get("type", "").lower() == "application/ld+json":
             self._script = True
@@ -2342,6 +2398,9 @@ class ProductPageParser(HTMLParser):
         elif tag == self._product_title_tag:
             self._product_title_tag = ""
 
+        if self._product_content_depth and tag not in self.VOID_TAGS:
+            self._product_content_depth -= 1
+
     def handle_data(self, data):
         if self._script:
             self._script_text.append(data)
@@ -2353,7 +2412,10 @@ class ProductPageParser(HTMLParser):
             self.title_parts.append(data)
 
         elif not self._ignored_depth and data.strip():
-            self.text_parts.append(data.strip())
+            text = data.strip()
+            self.text_parts.append(text)
+            if self._product_content_depth:
+                self.product_text_parts.append(text)
 
 
 def safe_external_url(value):
@@ -2623,6 +2685,52 @@ def is_generic_amazon_listing_title(value):
     )
 
 
+AMAZON_STOREFRONT_PROMOTION_MARKERS = (
+    "amazon مصر",
+    "amazon eg",
+    "amazon egypt",
+    "amazon.eg",
+    "أمازون مصر",
+    "افضل الاسعار",
+    "أفضل الأسعار",
+    "شحن سريع",
+    "شحن مجاني",
+    "توصيل مجاني",
+    "إرجاع مجاني",
+    "ارجاع مجاني",
+    "الدفع عند الاستلام",
+    "أضف إلى العربة",
+    "اضف الى العربة",
+    "اشتر الآن",
+    "اشتري الآن",
+    "free shipping",
+    "free delivery",
+    "cash on delivery",
+    "free returns",
+    "add to cart",
+    "buy now",
+)
+
+
+def is_amazon_storefront_promotion(value):
+
+    normalized = normalize_fact(value)
+    return any(
+        normalize_fact(marker) in normalized
+        for marker in AMAZON_STOREFRONT_PROMOTION_MARKERS
+    )
+
+
+def listing_product_text(parts):
+
+    return clean_text(" ".join(
+        text
+        for part in parts
+        if (text := clean_text(part))
+        and not is_amazon_storefront_promotion(text)
+    ))
+
+
 def listing_source_read_status(title, visible_text, image_count):
 
     page_text = normalize_fact(f"{title} {visible_text[:1500]}")
@@ -2700,10 +2808,16 @@ def extract_listing_review_source(url):
         or " ".join(parser.title_parts)
     )
 
-    description = clean_text(
-        parser.meta.get("og:description")
-        or parser.meta.get("description")
-        or product.get("description")
+    scoped_product_text = listing_product_text(parser.product_text_parts)
+    jsonld_description = listing_product_text([product.get("description", "")])
+    metadata_description = listing_product_text([
+        parser.meta.get("og:description", ""),
+        parser.meta.get("description", ""),
+    ])
+    description = (
+        scoped_product_text
+        or jsonld_description
+        or metadata_description
     )
 
     image_candidates = list(parser.product_images)
@@ -2714,8 +2828,11 @@ def extract_listing_review_source(url):
 
     images = unique_remote_images(image_candidates)
 
-    visible_text = clean_text(
-        " ".join(parser.text_parts)
+    # Prefer text inside product-specific sections.  Page-wide storefront text
+    # is used only as a filtered fallback so shipping, payment, and returns UI
+    # never becomes evidence about the product's own description.
+    visible_text = scoped_product_text or jsonld_description or listing_product_text(
+        parser.text_parts
     )
 
     if not title and not visible_text:
@@ -2775,7 +2892,7 @@ def review_amazon_listing_with_ai(source):
     source_text = json.dumps({
         "title": source.get("title", ""),
         "description": source.get("description", ""),
-        "visible_page_text": source.get("visible_text", ""),
+        "product_page_text": source.get("visible_text", ""),
         "detected_product_image_count": source.get("image_count", 0),
         "page_read_status": source.get("read_status", "partial"),
     }, ensure_ascii=False)
@@ -2798,6 +2915,10 @@ def review_amazon_listing_with_ai(source):
                 "insufficient, and do not create an images gap. Likewise, do not call a title, "
                 "description, feature list, or attribute missing when relevant visible page data "
                 "exists. Give concise practical recommendations only for directly observed issues. "
+                "The product_page_text field is scoped to product content. Never use Amazon "
+                "storefront phrases about shipping, delivery, returns, payment, prices, or Amazon "
+                "itself as evidence or as a reason to criticize the product description. Do not "
+                "call a description generic based on marketplace-wide promotional text. "
                 "Keep every array to four items or fewer."
             )
         },
@@ -3006,7 +3127,11 @@ def listing_gap_has_visible_evidence(gap, source):
         source.get("visible_text", ""),
     )))
     normalized_evidence = normalize_fact(evidence)
-    if len(normalized_evidence) < 8 or normalized_evidence not in source_text:
+    if (
+        len(normalized_evidence) < 8
+        or normalized_evidence not in source_text
+        or is_amazon_storefront_promotion(evidence)
+    ):
         return False
 
     gap_text = " ".join((
