@@ -92,9 +92,37 @@ const closestProduct = document.getElementById("closestProduct");
 const resultsSection = document.getElementById("resultsSection");
 const resultsGrid = document.getElementById("resultsGrid");
 const resultCount = document.getElementById("resultCount");
+const RESULT_CACHE_TTL_MS = 60 * 60 * 1000;
+const RESULT_CACHE_PREFIX = "zahed-hand:market-analysis:v1:";
 
 let selectedFile = null;
 let previewUrl = "";
+
+function resultCacheKey(file) {
+    return `${RESULT_CACHE_PREFIX}${file.name}:${file.size}:${file.lastModified}`;
+}
+
+function cachedResultFor(file) {
+    try {
+        const record = JSON.parse(localStorage.getItem(resultCacheKey(file)) || "null");
+        if (!record || !record.data || Date.now() - record.savedAt > RESULT_CACHE_TTL_MS) {
+            localStorage.removeItem(resultCacheKey(file));
+            return null;
+        }
+        return record.data.analysis_available ? record.data : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+function cacheResultFor(file, data) {
+    if (!data.analysis_available) return;
+    try {
+        localStorage.setItem(resultCacheKey(file), JSON.stringify({savedAt: Date.now(), data}));
+    } catch (_) {
+        // Storage is optional; the server cache still keeps repeated uploads stable.
+    }
+}
 
 dropArea.addEventListener("click", () => fileInput.click());
 fileInput.addEventListener("change", () => {
@@ -146,6 +174,13 @@ analyzeButton.addEventListener("click", async () => {
     if (!selectedFile) return;
 
     clearResults();
+    const cachedData = cachedResultFor(selectedFile);
+    if (cachedData) {
+        renderResults(cachedData);
+        statusBox.innerHTML = '<div class="success-box">عرضنا نفس نتيجة التحليل المحفوظة للصورة لمدة ساعة.</div>';
+        return;
+    }
+
     analyzeButton.disabled = true;
     statusBox.innerHTML = '<div class="loading-box"><div class="loader"></div><strong>بنبحث عن عروض مشابهة بالجنيه المصري...</strong><span>بنرتب الأسعار الظاهرة من الأرخص للأغلى</span></div>';
 
@@ -170,6 +205,7 @@ analyzeButton.addEventListener("click", async () => {
             return;
         }
 
+        cacheResultFor(selectedFile, data);
         renderResults(data);
     } catch (error) {
         showError(error.message || "حصل خطأ أثناء تحليل المتاجر. جرّب تاني.");

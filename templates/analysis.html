@@ -496,9 +496,79 @@ const offersTableBody =
 const offersResultCount =
     document.getElementById("offersResultCount");
 
+const RESULT_CACHE_TTL_MS =
+    60 * 60 * 1000;
+
+const RESULT_CACHE_PREFIX =
+    "zahed-hand:amazon-analysis:v1:";
+
 
 let selectedFile = null;
 let previewUrl = "";
+
+
+function resultCacheKey(file) {
+
+    return `${RESULT_CACHE_PREFIX}${file.name}:${file.size}:${file.lastModified}`;
+
+}
+
+
+function cachedResultFor(file) {
+
+    try {
+
+        const record = JSON.parse(
+            localStorage.getItem(resultCacheKey(file)) || "null"
+        );
+
+        if (
+            !record
+            || !record.data
+            || Date.now() - record.savedAt > RESULT_CACHE_TTL_MS
+        ) {
+
+            localStorage.removeItem(resultCacheKey(file));
+            return null;
+
+        }
+
+        return record.data.analysis_available
+            ? record.data
+            : null;
+
+    } catch (_) {
+
+        return null;
+
+    }
+
+}
+
+
+function cacheResultFor(file, data) {
+
+    if (!data.analysis_available) {
+        return;
+    }
+
+    try {
+
+        localStorage.setItem(
+            resultCacheKey(file),
+            JSON.stringify({
+                savedAt: Date.now(),
+                data
+            })
+        );
+
+    } catch (_) {
+
+        // التخزين اختياري؛ كاش السيرفر يثبت النتيجة عند تكرار الرفع.
+
+    }
+
+}
 
 
 /* =========================================
@@ -670,6 +740,50 @@ removeButton.addEventListener(
    Analyze
 ========================================= */
 
+function displayAnalysisResult(data) {
+
+    statusBox.innerHTML = "";
+
+    if (data.query) {
+
+        detectedQuery.textContent =
+            data.query;
+
+        detectedSection.style.display =
+            "flex";
+
+    }
+
+    if (!data.analysis_available) {
+
+        statusBox.innerHTML = `
+
+            <div class="warning-box">
+
+                <strong>
+                    ملقيناش أسعار
+                </strong>
+
+                <p>
+                    ${escapeHTML(
+                        data.message
+                        || "دورنا وملاقيناش أي أسعار ظاهرة للمنتج ده."
+                    )}
+                </p>
+
+            </div>
+
+        `;
+
+        return;
+
+    }
+
+    renderAnalysis(data);
+
+}
+
+
 analyzeButton.addEventListener(
     "click",
     async () => {
@@ -680,6 +794,22 @@ analyzeButton.addEventListener(
 
 
         clearResults();
+
+        const cachedData =
+            cachedResultFor(selectedFile);
+
+        if (cachedData) {
+
+            displayAnalysisResult(cachedData);
+            statusBox.innerHTML = `
+                <div class="success-box">
+                    عرضنا نفس نتيجة التحليل المحفوظة للصورة لمدة ساعة.
+                </div>
+            `;
+
+            return;
+
+        }
 
 
         analyzeButton.disabled =
@@ -769,51 +899,8 @@ analyzeButton.addEventListener(
             }
 
 
-            statusBox.innerHTML =
-                "";
-
-
-            if (data.query) {
-
-                detectedQuery.textContent =
-                    data.query;
-
-                detectedSection.style.display =
-                    "flex";
-
-            }
-
-
-            if (
-                !data.analysis_available
-            ) {
-
-                statusBox.innerHTML = `
-
-                    <div class="warning-box">
-
-                        <strong>
-                            ملقيناش أسعار
-                        </strong>
-
-                        <p>
-                            ${escapeHTML(
-                                data.message
-                                || "دورنا وملاقيناش أي أسعار ظاهرة للمنتج ده."
-                            )}
-                        </p>
-
-                    </div>
-
-                `;
-
-                return;
-            }
-
-
-            renderAnalysis(
-                data
-            );
+            cacheResultFor(selectedFile, data);
+            displayAnalysisResult(data);
 
         }
 

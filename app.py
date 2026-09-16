@@ -7,6 +7,7 @@ import tempfile
 import json
 import ipaddress
 import socket
+import time
 from functools import lru_cache
 from html import unescape
 from html.parser import HTMLParser
@@ -113,6 +114,10 @@ OPENAI_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-2.5-sunburst").s
 OPENAI_IMAGE_EDITS_URL = "https://api.openai.com/v1/images/edits"
 OPENAI_PRODUCT_MATCH_MODEL = os.getenv("OPENAI_PRODUCT_MATCH_MODEL", "gpt-5.6-luna").strip()
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
+
+ANALYSIS_CACHE_TTL_SECONDS = 60 * 60
+ANALYSIS_CACHE_MAX_ITEMS = 32
+_analysis_result_cache = {}
 
 
 ALLOWED_EXTENSIONS = {
@@ -235,6 +240,52 @@ def prepare_image(file_storage):
     return temp_file.name
 
 
+def analysis_cache_key(analysis_type, image_path):
+
+    try:
+        digest = hashlib.sha256()
+        with open(image_path, "rb") as image_file:
+            for chunk in iter(lambda: image_file.read(65536), b""):
+                digest.update(chunk)
+        return f"{analysis_type}:{digest.hexdigest()}"
+    except OSError:
+        return ""
+
+
+def cached_analysis_result(analysis_type, image_path):
+
+    cache_key = analysis_cache_key(analysis_type, image_path)
+    if not cache_key:
+        return None
+
+    now = time.monotonic()
+    for stale_key, entry in list(_analysis_result_cache.items()):
+        if entry["expires_at"] <= now:
+            _analysis_result_cache.pop(stale_key, None)
+
+    entry = _analysis_result_cache.get(cache_key)
+    return entry["result"] if entry else None
+
+
+def cache_analysis_result(analysis_type, image_path, result):
+
+    cache_key = analysis_cache_key(analysis_type, image_path)
+    if not cache_key:
+        return
+
+    if len(_analysis_result_cache) >= ANALYSIS_CACHE_MAX_ITEMS:
+        oldest_key = min(
+            _analysis_result_cache,
+            key=lambda key: _analysis_result_cache[key]["expires_at"]
+        )
+        _analysis_result_cache.pop(oldest_key, None)
+
+    _analysis_result_cache[cache_key] = {
+        "expires_at": time.monotonic() + ANALYSIS_CACHE_TTL_SECONDS,
+        "result": result,
+    }
+
+
 # =========================================================
 # IMAGE UPLOAD
 # =========================================================
@@ -294,7 +345,8 @@ def upload_image_to_serpapi(image_path):
 def google_lens(
     image_id,
     search_type="visual_matches",
-    country=None
+    country=None,
+    query=None
 ):
 
     params = {
@@ -310,23 +362,37 @@ def google_lens(
 
         params["country"] = country
 
-    response = requests.get(
-        SERPAPI_SEARCH_URL,
-        params=params,
-        timeout=90
-    )
+    query = clean_text(query)
+    if query:
+        params["q"] = query
 
-    response.raise_for_status()
+    for attempt in range(2):
+        try:
+            response = requests.get(
+                SERPAPI_SEARCH_URL,
+                params=params,
+                timeout=90
+            )
 
-    data = response.json()
+            if getattr(response, "status_code", 0) >= 500 and attempt == 0:
+                continue
 
-    if data.get("error"):
+            response.raise_for_status()
 
-        raise Exception(
-            data["error"]
-        )
+            data = response.json()
 
-    return data
+            if data.get("error"):
+                raise Exception(
+                    data["error"]
+                )
+
+            return data
+
+        except (requests.Timeout, requests.ConnectionError):
+            if attempt:
+                raise
+
+    raise requests.RequestException("Google Lens did not return a response.")
 
 
 # =========================================================
@@ -813,13 +879,42 @@ def egyptian_market_results(visual_results):
 
     return sorted(
         results,
-        key=lambda item: item["price_value"]
+        key=lambda item: (
+            item["price_value"],
+            normalize_fact(item.get("title", "")),
+            clean_text(item.get("link", "")),
+        )
     )
 
 
 # =========================================================
 # GET PRODUCT NAME FOR PRICE PAGE
 # =========================================================
+
+PRODUCT_QUERY_STOP_WORDS = {
+    "and", "the", "with", "for", "from", "this", "that", "your",
+    "new", "best", "price", "prices", "buy", "shop", "online", "sale",
+    "amazon", "amazoncom", "amazoneg", "egypt", "egyptian", "eg",
+    "item", "product", "products", "portable", "home", "office", "gift",
+    "pack", "set", "pc", "pcs", "piece", "pieces", "ml", "oz", "cm",
+    "عن", "على", "من", "الى", "إلى", "في", "مع", "هذا", "هذه", "المنتج",
+    "سعر", "اسعار", "أسعار", "شراء", "متجر", "مصر", "عرض",
+}
+
+
+def product_query_words(value):
+
+    words = re.findall(
+        r"[^\W\d_]+",
+        clean_product_title(value).lower(),
+        flags=re.UNICODE
+    )
+    return [
+        word
+        for word in words
+        if len(word) >= 3 and word not in PRODUCT_QUERY_STOP_WORDS
+    ]
+
 
 def find_product_query(
     lens_data
@@ -830,6 +925,7 @@ def find_product_query(
         []
     )
 
+    titles = []
     if isinstance(
         visual_matches,
         list
@@ -846,7 +942,54 @@ def find_product_query(
 
             if len(title) >= 4:
 
-                return title
+                titles.append(title)
+
+    # Google Lens can reshuffle its matches between identical searches. Build
+    # a compact query from wording shared by multiple matches instead of using
+    # whichever title happened to be first on this request.
+    phrase_counts = {}
+    word_counts = {}
+    for title in sorted(set(titles), key=normalize_fact):
+        words = product_query_words(title)
+        for word in set(words):
+            word_counts[word] = word_counts.get(word, 0) + 1
+        for phrase in {
+            " ".join(words[index:index + 2])
+            for index in range(len(words) - 1)
+        }:
+            phrase_counts[phrase] = phrase_counts.get(phrase, 0) + 1
+
+    shared_phrases = [
+        phrase
+        for phrase, count in phrase_counts.items()
+        if count >= 2
+    ]
+    if shared_phrases:
+        return sorted(
+            shared_phrases,
+            key=lambda phrase: (
+                -phrase_counts[phrase],
+                -len(phrase),
+                phrase,
+            )
+        )[0]
+
+    shared_words = [
+        word
+        for word, count in word_counts.items()
+        if count >= 2
+    ]
+    if shared_words:
+        return " ".join(sorted(
+            shared_words,
+            key=lambda word: (-word_counts[word], word)
+        )[:2])
+
+    if titles:
+        return sorted(
+            set(titles),
+            key=lambda title: (len(title), normalize_fact(title))
+        )[0]
 
 
     related = lens_data.get(
@@ -859,6 +1002,7 @@ def find_product_query(
         list
     ):
 
+        queries = []
         for item in related:
 
             query = clean_text(
@@ -870,7 +1014,13 @@ def find_product_query(
 
             if len(query) >= 4:
 
-                return query
+                queries.append(query)
+
+        if queries:
+            return sorted(
+                set(queries),
+                key=lambda query: (len(query), normalize_fact(query))
+            )[0]
 
 
     return ""
@@ -1711,17 +1861,39 @@ def api_market_analysis():
     try:
 
         temp_path = prepare_image(image_file)
+        cached_result = cached_analysis_result(
+            "market-analysis",
+            temp_path
+        )
+        if cached_result:
+            return jsonify(cached_result)
+
         image_id = upload_image_to_serpapi(temp_path)
 
-        lens_data = google_lens(
+        initial_lens_data = google_lens(
             image_id,
             search_type="visual_matches",
             country="eg"
         )
 
-        results = egyptian_market_results(
-            get_visual_results(lens_data)
+        initial_results = egyptian_market_results(
+            get_visual_results(initial_lens_data)
         )
+
+        product_query = find_product_query(initial_lens_data)
+        results = initial_results
+        if product_query and len(initial_results) < 4:
+            scoped_lens_data = google_lens(
+                image_id,
+                search_type="visual_matches",
+                country="eg",
+                query=product_query
+            )
+            scoped_results = egyptian_market_results(
+                get_visual_results(scoped_lens_data)
+            )
+            if scoped_results:
+                results = scoped_results
 
         if not results:
             return jsonify({
@@ -1737,7 +1909,7 @@ def api_market_analysis():
             for result in results
         ]
 
-        return jsonify({
+        response_data = {
             "success": True,
             "analysis_available": True,
             "count": len(results),
@@ -1748,7 +1920,9 @@ def api_market_analysis():
             },
             "closest": results[0],
             "results": results,
-        })
+        }
+        cache_analysis_result("market-analysis", temp_path, response_data)
+        return jsonify(response_data)
 
     except requests.Timeout:
         return jsonify({
@@ -1809,6 +1983,13 @@ def api_analyze():
         temp_path = prepare_image(
             image_file
         )
+
+        cached_result = cached_analysis_result(
+            "amazon-analysis",
+            temp_path
+        )
+        if cached_result:
+            return jsonify(cached_result)
 
         image_id = (
             upload_image_to_serpapi(
@@ -1920,10 +2101,11 @@ def api_analyze():
 
             all_products,
 
-            key=lambda product:
-                product[
-                    "price_value"
-                ]
+            key=lambda product: (
+                product["price_value"],
+                clean_text(product.get("asin", "")),
+                clean_text(product.get("link", "")),
+            )
 
         )
 
@@ -1993,7 +2175,7 @@ def api_analyze():
         )
 
 
-        return jsonify({
+        response_data = {
 
             "success":
                 True,
@@ -2040,7 +2222,9 @@ def api_analyze():
             "results":
                 products_by_price
 
-        })
+        }
+        cache_analysis_result("amazon-analysis", temp_path, response_data)
+        return jsonify(response_data)
 
 
     except ProductMatchVerificationError as error:
