@@ -1,11 +1,13 @@
 import os
 import base64
+import hashlib
 import re
 import statistics
 import tempfile
 import json
 import ipaddress
 import socket
+from functools import lru_cache
 from html import unescape
 from html.parser import HTMLParser
 
@@ -23,20 +25,27 @@ app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 60 * 60 * 24 * 365
 
 
-def static_asset_url(filename):
+@lru_cache(maxsize=32)
+def static_asset_version(filename):
 
     try:
-        version = int(
-            os.path.getmtime(
-                os.path.join(
-                    app.static_folder,
-                    filename
-                )
-            )
+        asset_path = os.path.join(
+            app.static_folder,
+            filename
         )
 
+        with open(asset_path, "rb") as asset_file:
+            return hashlib.sha256(
+                asset_file.read()
+            ).hexdigest()[:12]
+
     except OSError:
-        version = 1
+        return "1"
+
+
+def static_asset_url(filename):
+
+    version = static_asset_version(filename)
 
     return url_for(
         "static",

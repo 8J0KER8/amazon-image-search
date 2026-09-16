@@ -41,17 +41,20 @@
     <section id="reviewSection" class="review-result" hidden>
         <div id="reviewOverview" class="review-overview"></div>
         <div class="review-columns">
-            <section class="review-panel">
-                <h3>نقاط القوة</h3>
+            <section class="review-panel review-panel--strengths">
+                <h3><span class="panel-icon">✓</span> نقاط القوة</h3>
                 <ul id="strengthsList" class="review-list"></ul>
             </section>
-            <section class="review-panel">
-                <h3>خطوات التحسين أولًا</h3>
+            <section class="review-panel review-panel--steps">
+                <h3><span class="panel-icon">↗</span> خطوات التحسين أولًا</h3>
                 <ul id="nextStepsList" class="review-list"></ul>
             </section>
         </div>
-        <section class="review-panel" style="margin-top:20px">
-            <h3>النواقص والمقترحات</h3>
+        <section class="review-panel review-panel--gaps">
+            <div class="review-panel-title">
+                <h3><span class="panel-icon">!</span> النواقص والمقترحات</h3>
+                <span id="gapCount" class="panel-count"></span>
+            </div>
             <div id="gapsList" class="gap-list"></div>
         </section>
     </section>
@@ -67,6 +70,7 @@ const reviewOverview = document.getElementById("reviewOverview");
 const strengthsList = document.getElementById("strengthsList");
 const nextStepsList = document.getElementById("nextStepsList");
 const gapsList = document.getElementById("gapsList");
+const gapCount = document.getElementById("gapCount");
 
 reviewForm.addEventListener("submit", async event => {
     event.preventDefault();
@@ -109,32 +113,52 @@ function renderReview(data) {
     const score = Number.isFinite(numericScore)
         ? Math.max(0, Math.min(100, Math.round(numericScore)))
         : 0;
+    const state = scoreState(score);
+    const imageCount = Number(source.image_count) || 0;
+    const strengths = Array.isArray(review.strengths) ? review.strengths : [];
+    const gaps = Array.isArray(review.gaps) ? review.gaps : [];
+    const nextSteps = Array.isArray(review.next_steps) ? review.next_steps : [];
 
     reviewOverview.innerHTML = `
-        <div class="review-score"><strong>${score}</strong><span>من 100</span></div>
-        <div>
-            <h2>${escapeHTML(source.title || "عرض Amazon مصر")}</h2>
-            <p>${escapeHTML(review.summary || "تم تقييم بيانات العرض الظاهرة.")}</p>
-            <p class="review-source">صور ظاهرة للتقييم: ${escapeHTML(source.image_count || 0)} · التقييم إرشادي ولا يضمن ترتيبًا.</p>
+        <div class="review-overview-main">
+            <div class="review-score-wrap">
+                <div class="review-score review-score--${state.tone}"><strong>${score}</strong><span>من 100</span></div>
+                <span>تقييم المحتوى</span>
+            </div>
+            <div class="review-intro">
+                <span class="review-chip review-chip--${state.tone}">${state.icon} ${state.label}</span>
+                <h2>${escapeHTML(displaySourceTitle(source.title))}</h2>
+                <p>${escapeHTML(review.summary || "تم تقييم بيانات العرض الظاهرة.")}</p>
+                <p class="review-source">تقييم إرشادي للبيانات الظاهرة ولا يضمن ترتيبًا على Amazon.</p>
+            </div>
+        </div>
+        <div class="review-summary-grid">
+            <div class="review-summary-item"><span class="summary-icon">🖼️</span><strong>${imageCount}</strong><small>صور ظاهرة</small></div>
+            <div class="review-summary-item"><span class="summary-icon">✓</span><strong>${strengths.length}</strong><small>نقاط قوة</small></div>
+            <div class="review-summary-item"><span class="summary-icon">!</span><strong>${gaps.length}</strong><small>نقاط تحتاج تحسين</small></div>
+            <div class="review-summary-item"><span class="summary-icon">↗</span><strong>${nextSteps.length}</strong><small>خطوات مقترحة</small></div>
         </div>
     `;
 
-    renderSimpleList(strengthsList, review.strengths, "لا توجد نقاط قوة واضحة في البيانات المتاحة.");
-    renderSimpleList(nextStepsList, review.next_steps, "لا توجد خطوات مقترحة حاليًا.");
+    renderSimpleList(strengthsList, strengths, "لا توجد نقاط قوة واضحة في البيانات المتاحة.");
+    renderSimpleList(nextStepsList, nextSteps, "لا توجد خطوات مقترحة حاليًا.");
 
-    const gaps = Array.isArray(review.gaps) ? review.gaps : [];
+    gapCount.textContent = gaps.length ? `${gaps.length} نقاط` : "مكتمل";
     gapsList.innerHTML = gaps.length
         ? gaps.map(gap => {
             const severity = normalizeSeverity(gap.severity);
             return `
-                <article class="gap-item">
-                    <h4>${escapeHTML(gap.area || "نقطة تحتاج مراجعة")} <span class="severity severity-${severity}">${severityLabel(severity)}</span></h4>
-                    <p>${escapeHTML(gap.finding || "لم تظهر بيانات كافية لهذا الجزء.")}</p>
-                    <p><strong>المقترح:</strong> ${escapeHTML(gap.recommendation || "أضف بيانات دقيقة وواضحة للمنتج.")}</p>
+                <article class="gap-item gap-item--${severity}">
+                    <div class="gap-icon">${severityIcon(severity)}</div>
+                    <div class="gap-content">
+                        <h4>${escapeHTML(gap.area || "نقطة تحتاج مراجعة")} <span class="severity severity-${severity}">${severityLabel(severity)}</span></h4>
+                        <p>${escapeHTML(gap.finding || "لم تظهر بيانات كافية لهذا الجزء.")}</p>
+                        <div class="gap-recommendation"><span>المقترح</span>${escapeHTML(gap.recommendation || "أضف بيانات دقيقة وواضحة للمنتج.")}</div>
+                    </div>
                 </article>
             `;
         }).join("")
-        : '<p class="listing-review-note">لم تظهر نواقص محددة من البيانات المتاحة.</p>';
+        : '<div class="empty-review-state"><span>✓</span><strong>لا توجد نواقص محددة في البيانات المتاحة</strong><p>راجِع العرض بنفسك قبل النشر للتأكد من دقة كل التفاصيل.</p></div>';
 
     reviewSection.hidden = false;
     reviewSection.scrollIntoView({behavior: "smooth", block: "start"});
@@ -151,6 +175,23 @@ function normalizeSeverity(value) {
 
 function severityLabel(value) {
     return {high: "أولوية عالية", medium: "أولوية متوسطة", low: "تحسين إضافي"}[value];
+}
+
+function severityIcon(value) {
+    return {high: "!", medium: "↗", low: "+"}[value];
+}
+
+function scoreState(score) {
+    if (score >= 75) return {tone: "good", label: "عرض قوي", icon: "✨"};
+    if (score >= 50) return {tone: "medium", label: "يحتاج تحسينات بسيطة", icon: "↗"};
+    return {tone: "low", label: "يحتاج تطوير", icon: "!"};
+}
+
+function displaySourceTitle(value) {
+    const title = String(value || "").trim();
+    return /^(amazon(?:\.eg)?|amazon\.eg)$/i.test(title)
+        ? "عرض Amazon مصر"
+        : title || "عرض Amazon مصر";
 }
 
 function showError(message) {
