@@ -2963,3 +2963,159 @@ nav a:focus-visible {
         flex-direction: column;
     }
 }
+
+
+/* LISTING REVIEW — READABILITY */
+.listing-review-form label {
+    font-size: 18px;
+}
+
+
+.review-url-input,
+.listing-review-note {
+    font-size: 15px;
+}
+
+
+.listing-review-note {
+    line-height: 1.75;
+}
+
+
+.review-overview p {
+    font-size: 17px;
+}
+
+
+.review-overview .review-source {
+    font-size: 14px;
+}
+
+
+.review-verification {
+    margin-top: 12px !important;
+
+    padding: 9px 11px;
+
+    border: 1px solid rgba(253, 230, 138, 0.34);
+
+    border-radius: 10px;
+
+    background: rgba(254, 243, 199, 0.13);
+
+    color: #fef3c7 !important;
+
+    font-size: 14px !important;
+
+    line-height: 1.8;
+}
+
+
+.review-summary-item strong {
+    font-size: 25px;
+}
+
+
+.review-summary-item small {
+    font-size: 13px;
+}
+
+
+.review-panel h3 {
+    font-size: 20px;
+}
+
+
+.panel-count {
+    font-size: 13px;
+}
+
+
+.review-list li {
+    min-height: 38px;
+
+    font-size: 16px;
+
+    line-height: 1.75;
+}
+
+
+.gap-content h4 {
+    font-size: 18px;
+}
+
+
+.gap-content p {
+    font-size: 16px;
+
+    line-height: 1.85;
+}
+
+
+.gap-evidence {
+    display: flex;
+
+    gap: 8px;
+
+    align-items: flex-start;
+
+    margin-top: 11px;
+
+    padding: 9px 11px;
+
+    border-radius: 9px;
+
+    background: #f8fafc;
+
+    color: #475569;
+
+    font-size: 14px;
+
+    line-height: 1.75;
+}
+
+
+.gap-evidence span {
+    flex: 0 0 auto;
+
+    color: #166e70;
+
+    font-size: 12px;
+
+    font-weight: bold;
+}
+
+
+.gap-recommendation {
+    font-size: 15px;
+
+    line-height: 1.8;
+}
+
+
+.gap-recommendation span {
+    font-size: 11px;
+}
+
+
+.empty-review-state p {
+    font-size: 15px;
+
+    line-height: 1.8;
+}
+
+
+@media (max-width: 700px) {
+    .review-overview p {
+        font-size: 16px;
+    }
+
+    .review-list li,
+    .gap-content p {
+        font-size: 15px;
+    }
+
+    .gap-content h4 {
+        font-size: 17px;
+    }
+}

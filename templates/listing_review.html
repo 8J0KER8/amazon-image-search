@@ -110,25 +110,30 @@ function renderReview(data) {
     const review = data.review || {};
     const source = data.source || {};
     const numericScore = Number(review.overall_score);
-    const score = Number.isFinite(numericScore)
+    const hasScore = Number.isFinite(numericScore);
+    const score = hasScore
         ? Math.max(0, Math.min(100, Math.round(numericScore)))
-        : 0;
-    const state = scoreState(score);
+        : null;
+    const state = hasScore
+        ? scoreState(score)
+        : {tone: "medium", label: "تحقق غير مكتمل", icon: "?"};
     const imageCount = Number(source.image_count) || 0;
     const strengths = Array.isArray(review.strengths) ? review.strengths : [];
     const gaps = Array.isArray(review.gaps) ? review.gaps : [];
     const nextSteps = Array.isArray(review.next_steps) ? review.next_steps : [];
+    const verificationNotice = String(review.verification_notice || "").trim();
 
     reviewOverview.innerHTML = `
         <div class="review-overview-main">
             <div class="review-score-wrap">
-                <div class="review-score review-score--${state.tone}"><strong>${score}</strong><span>من 100</span></div>
+                <div class="review-score review-score--${state.tone}"><strong>${hasScore ? score : "—"}</strong><span>${hasScore ? "من 100" : "لم يتم التقييم"}</span></div>
                 <span>تقييم المحتوى</span>
             </div>
             <div class="review-intro">
                 <span class="review-chip review-chip--${state.tone}">${state.icon} ${state.label}</span>
                 <h2>${escapeHTML(displaySourceTitle(source.title))}</h2>
                 <p>${escapeHTML(review.summary || "تم تقييم بيانات العرض الظاهرة.")}</p>
+                ${verificationNotice ? `<p class="review-verification">ⓘ ${escapeHTML(verificationNotice)}</p>` : ""}
                 <p class="review-source">تقييم إرشادي للبيانات الظاهرة ولا يضمن ترتيبًا على Amazon.</p>
             </div>
         </div>
@@ -143,22 +148,26 @@ function renderReview(data) {
     renderSimpleList(strengthsList, strengths, "لا توجد نقاط قوة واضحة في البيانات المتاحة.");
     renderSimpleList(nextStepsList, nextSteps, "لا توجد خطوات مقترحة حاليًا.");
 
-    gapCount.textContent = gaps.length ? `${gaps.length} نقاط` : "مكتمل";
+    gapCount.textContent = gaps.length ? `${gaps.length} نقاط` : (verificationNotice ? "قيد التحقق" : "مكتمل");
     gapsList.innerHTML = gaps.length
         ? gaps.map(gap => {
             const severity = normalizeSeverity(gap.severity);
+            const evidence = String(gap.evidence || "").trim();
             return `
                 <article class="gap-item gap-item--${severity}">
                     <div class="gap-icon">${severityIcon(severity)}</div>
                     <div class="gap-content">
                         <h4>${escapeHTML(gap.area || "نقطة تحتاج مراجعة")} <span class="severity severity-${severity}">${severityLabel(severity)}</span></h4>
                         <p>${escapeHTML(gap.finding || "لم تظهر بيانات كافية لهذا الجزء.")}</p>
+                        ${evidence ? `<div class="gap-evidence"><span>الدليل الظاهر</span>${escapeHTML(evidence)}</div>` : ""}
                         <div class="gap-recommendation"><span>المقترح</span>${escapeHTML(gap.recommendation || "أضف بيانات دقيقة وواضحة للمنتج.")}</div>
                     </div>
                 </article>
             `;
         }).join("")
-        : '<div class="empty-review-state"><span>✓</span><strong>لا توجد نواقص محددة في البيانات المتاحة</strong><p>راجِع العرض بنفسك قبل النشر للتأكد من دقة كل التفاصيل.</p></div>';
+        : verificationNotice
+            ? `<div class="empty-review-state"><span>✓</span><strong>لم نعرض نواقص غير مؤكدة</strong><p>${escapeHTML(verificationNotice)}</p></div>`
+            : '<div class="empty-review-state"><span>✓</span><strong>لا توجد نواقص محددة في البيانات المتاحة</strong><p>راجِع العرض بنفسك قبل النشر للتأكد من دقة كل التفاصيل.</p></div>';
 
     reviewSection.hidden = false;
     reviewSection.scrollIntoView({behavior: "smooth", block: "start"});
