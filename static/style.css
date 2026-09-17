@@ -1740,6 +1740,335 @@ nav a:focus-visible {
 }
 
 
+.market-insights {
+    margin: 36px 0 42px;
+}
+
+
+.market-insights-note,
+.market-insights-loading,
+.market-insights-empty {
+    display: flex;
+
+    gap: 9px;
+
+    align-items: center;
+
+    margin-bottom: 16px;
+
+    padding: 13px 16px;
+
+    border: 1px solid rgba(44, 122, 123, 0.16);
+
+    border-radius: 12px;
+
+    background: #edf8f7;
+
+    color: #155b59;
+
+    font-size: 14px;
+
+    line-height: 1.65;
+}
+
+
+.market-insights-loading {
+    flex-wrap: wrap;
+}
+
+
+.market-insights-loading .loader {
+    width: 20px;
+
+    height: 20px;
+
+    margin: 0;
+}
+
+
+.market-insights-loading span,
+.market-insights-empty span {
+    color: #52616b;
+}
+
+
+.market-insights-empty {
+    align-items: flex-start;
+
+    flex-direction: column;
+
+    border-color: rgba(229, 171, 69, 0.28);
+
+    background: #fffaf0;
+
+    color: #7c4b0d;
+}
+
+
+.offer-timeline-grid {
+    display: grid;
+
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+
+    gap: 16px;
+
+    margin-bottom: 18px;
+}
+
+
+.offer-date-card {
+    min-height: 178px;
+
+    padding: 20px;
+
+    border: 1px solid rgba(16, 43, 60, 0.09);
+
+    border-top: 5px solid #2c7a7b;
+
+    border-radius: 16px;
+
+    background: white;
+
+    box-shadow: 0 8px 20px rgba(16, 43, 60, 0.06);
+}
+
+
+.offer-date-card.last {
+    border-top-color: #e5ab45;
+}
+
+
+.offer-date-card > span,
+.insight-kicker {
+    display: block;
+
+    color: #52616b;
+
+    font-size: 13px;
+
+    font-weight: bold;
+}
+
+
+.offer-date-card strong {
+    display: block;
+
+    margin: 6px 0 2px;
+
+    color: #102b3c;
+
+    font-size: 27px;
+}
+
+
+.offer-date-card small {
+    color: #2c7a7b;
+
+    font-size: 12px;
+}
+
+
+.offer-date-card p {
+    display: -webkit-box;
+
+    margin: 12px 0 5px;
+
+    overflow: hidden;
+
+    color: #243b4a;
+
+    font-size: 14px;
+
+    line-height: 1.55;
+
+    -webkit-box-orient: vertical;
+
+    -webkit-line-clamp: 2;
+}
+
+
+.offer-date-card p a {
+    color: inherit;
+
+    text-decoration: none;
+}
+
+
+.offer-date-card p a:hover {
+    color: #a86508;
+
+    text-decoration: underline;
+}
+
+
+.offer-date-card em {
+    color: #7b8794;
+
+    font-size: 12px;
+
+    font-style: normal;
+}
+
+
+.customer-reviews-panel {
+    padding: 22px;
+
+    border: 1px solid rgba(16, 43, 60, 0.1);
+
+    border-radius: 18px;
+
+    background: white;
+
+    box-shadow: 0 10px 24px rgba(16, 43, 60, 0.06);
+}
+
+
+.customer-reviews-heading {
+    display: flex;
+
+    gap: 14px;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    margin-bottom: 16px;
+}
+
+
+.customer-reviews-heading h3 {
+    margin: 4px 0 0;
+
+    color: #102b3c;
+
+    font-size: 21px;
+}
+
+
+.review-total {
+    flex: 0 0 auto;
+
+    padding: 7px 10px;
+
+    border-radius: 999px;
+
+    background: #e2f1ef;
+
+    color: #155b59;
+
+    font-size: 12px;
+
+    font-weight: bold;
+}
+
+
+.customer-review-list {
+    display: grid;
+
+    gap: 12px;
+
+    margin: 0;
+
+    padding: 0;
+
+    list-style: none;
+
+    counter-reset: customer-review;
+}
+
+
+.customer-review {
+    position: relative;
+
+    padding: 16px 18px 16px 48px;
+
+    border: 1px solid #e4ebed;
+
+    border-radius: 13px;
+
+    background: #fbfdfd;
+
+    counter-increment: customer-review;
+}
+
+
+.customer-review::before {
+    position: absolute;
+
+    top: 16px;
+
+    left: 14px;
+
+    display: grid;
+
+    width: 24px;
+
+    height: 24px;
+
+    place-items: center;
+
+    border-radius: 50%;
+
+    background: #e5ab45;
+
+    color: #102b3c;
+
+    content: counter(customer-review);
+
+    font-size: 12px;
+
+    font-weight: bold;
+}
+
+
+.customer-review-meta {
+    display: flex;
+
+    gap: 10px;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    color: #687886;
+
+    font-size: 12px;
+}
+
+
+.customer-review-meta a {
+    flex: 0 0 auto;
+
+    color: #155b59;
+
+    font-weight: bold;
+
+    text-decoration: none;
+}
+
+
+.customer-review h4 {
+    margin: 10px 0 4px;
+
+    color: #102b3c;
+
+    font-size: 16px;
+}
+
+
+.customer-review p {
+    margin: 7px 0 0;
+
+    color: #334e5d;
+
+    font-size: 15px;
+
+    line-height: 1.8;
+
+    overflow-wrap: anywhere;
+}
+
+
 .listing-review-form {
     max-width: 900px;
 
@@ -2057,6 +2386,29 @@ nav a:focus-visible {
         grid-template-columns: 1fr;
     }
 
+    .offer-timeline-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .customer-reviews-panel {
+        padding: 17px;
+    }
+
+    .customer-reviews-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .customer-review {
+        padding: 15px 15px 15px 43px;
+    }
+
+    .customer-review-meta {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 5px;
+    }
+
     .review-url-row,
     .review-overview {
         flex-direction: column;
@@ -2083,6 +2435,22 @@ nav a:focus-visible {
 
     .featured-offers-grid .closest-image-wrap {
         height: 175px;
+    }
+
+    .offer-date-card {
+        min-height: 0;
+        padding: 16px;
+    }
+
+    .offer-date-card strong {
+        font-size: 24px;
+    }
+
+    .market-insights-note,
+    .market-insights-loading,
+    .market-insights-empty {
+        padding: 12px;
+        font-size: 13px;
     }
 
     .review-overview,

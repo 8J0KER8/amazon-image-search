@@ -8,6 +8,8 @@ import json
 import ipaddress
 import socket
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from functools import lru_cache
 from html import unescape
 from html.parser import HTMLParser
@@ -117,6 +119,9 @@ OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 
 ANALYSIS_CACHE_TTL_SECONDS = 60 * 60
 ANALYSIS_CACHE_MAX_ITEMS = 32
+MARKET_INSIGHTS_MAX_OFFERS = 12
+MARKET_INSIGHTS_MAX_REVIEWS = 40
+MARKET_INSIGHTS_MAX_REVIEWS_PER_OFFER = 8
 _analysis_result_cache = {}
 
 
@@ -1955,6 +1960,32 @@ def api_market_analysis():
                 pass
 
 
+@app.route(
+    "/api/market-analysis/insights",
+    methods=["POST"]
+)
+def api_market_analysis_insights():
+
+    payload = request.get_json(silent=True) or {}
+    offers = payload.get("offers", [])
+    if not isinstance(offers, list) or not offers:
+        return jsonify({
+            "success": False,
+            "error": "تعذر تجهيز عروض المتاجر لقراءة التواريخ والآراء."
+        }), 400
+
+    try:
+        return jsonify({
+            "success": True,
+            **build_market_analysis_insights(offers),
+        })
+    except Exception:
+        return jsonify({
+            "success": False,
+            "error": "تعذر قراءة تواريخ العروض وآراء العملاء الآن."
+        }), 500
+
+
 # =========================================================
 # PRICE ANALYSIS API
 # =========================================================
@@ -2829,6 +2860,360 @@ def product_nodes_from_jsonld(raw_nodes):
                 product_nodes.append(node)
 
     return product_nodes
+
+
+def schema_node_types(node):
+
+    if not isinstance(node, dict):
+        return []
+
+    node_types = node.get("@type", [])
+    node_types = [node_types] if isinstance(node_types, str) else node_types
+    return [normalize_fact(item) for item in node_types if item]
+
+
+def schema_node_has_type(node, *types):
+
+    node_types = set(schema_node_types(node))
+    return any(normalize_fact(item) in node_types for item in types)
+
+
+def iter_jsonld_objects(value):
+
+    if isinstance(value, list):
+        for item in value:
+            yield from iter_jsonld_objects(item)
+
+    elif isinstance(value, dict):
+        yield value
+        for item in value.values():
+            yield from iter_jsonld_objects(item)
+
+
+def parsed_jsonld_objects(raw_nodes):
+
+    objects = []
+    for raw in raw_nodes:
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        objects.extend(iter_jsonld_objects(data))
+    return objects
+
+
+def normalized_listing_date(value):
+
+    if not isinstance(value, (str, int, float)):
+        return ""
+
+    text = convert_arabic_numbers(clean_text(value))
+    if not text:
+        return ""
+
+    iso_candidate = text.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(iso_candidate)
+        if 1990 <= parsed.year <= datetime.now().year + 1:
+            return parsed.date().isoformat()
+    except ValueError:
+        pass
+
+    iso_match = re.search(r"\b(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})\b", text)
+    if iso_match:
+        try:
+            parsed = datetime(
+                int(iso_match.group(1)),
+                int(iso_match.group(2)),
+                int(iso_match.group(3))
+            )
+            if 1990 <= parsed.year <= datetime.now().year + 1:
+                return parsed.date().isoformat()
+        except ValueError:
+            pass
+
+    english_date = re.sub(r"(\d+)(?:st|nd|rd|th)\b", r"\1", text, flags=re.IGNORECASE)
+    for date_format in (
+        "%B %d, %Y",
+        "%b %d, %Y",
+        "%d %B %Y",
+        "%d %b %Y",
+    ):
+        try:
+            parsed = datetime.strptime(english_date, date_format)
+            if 1990 <= parsed.year <= datetime.now().year + 1:
+                return parsed.date().isoformat()
+        except ValueError:
+            continue
+
+    return ""
+
+
+def listing_date_from_product_text(parts):
+
+    labels = (
+        "date first available",
+        "first available",
+        "availability date",
+        "release date",
+        "تاريخ اول توفر",
+        "تاريخ أول توفر",
+        "تاريخ الاتاحة",
+        "تاريخ الإتاحة",
+        "تاريخ التوفر",
+        "تاريخ الإصدار",
+    )
+
+    for index, part in enumerate(parts):
+        normalized = normalize_fact(part)
+        if not normalized or len(normalized) > 100:
+            continue
+        if not any(label in normalized for label in labels):
+            continue
+        for candidate in parts[index + 1:index + 4]:
+            date_value = normalized_listing_date(candidate)
+            if date_value:
+                return date_value
+
+    return ""
+
+
+def extract_offer_listing_date(parser):
+
+    date_fields = (
+        ("datefirstavailable", "تاريخ أول توفر"),
+        ("availabilitystarts", "بداية إتاحة العرض"),
+        ("releasedate", "تاريخ الإصدار"),
+        ("datepublished", "تاريخ نشر العرض"),
+        ("datecreated", "تاريخ إنشاء العرض"),
+    )
+    objects = parsed_jsonld_objects(parser.jsonld)
+
+    for field, label in date_fields:
+        values = []
+        for node in objects:
+            if not schema_node_has_type(node, "product", "offer"):
+                continue
+            node_values = {
+                normalize_fact(key).replace(" ", ""): value
+                for key, value in node.items()
+            }
+            date_value = normalized_listing_date(node_values.get(field))
+            if date_value:
+                values.append(date_value)
+        if values:
+            return {"date": min(values), "label": label}
+
+    date_value = listing_date_from_product_text(parser.product_text_parts)
+    if not date_value:
+        date_value = listing_date_from_product_text(parser.text_parts)
+    return {"date": date_value, "label": "تاريخ الإتاحة الظاهر"} if date_value else None
+
+
+def review_objects_from_jsonld(raw_nodes):
+
+    reviews = []
+    for node in parsed_jsonld_objects(raw_nodes):
+        if schema_node_has_type(node, "review"):
+            reviews.append(node)
+        if not schema_node_has_type(node, "product"):
+            continue
+        direct_reviews = node.get("review", [])
+        if isinstance(direct_reviews, dict):
+            reviews.append(direct_reviews)
+        elif isinstance(direct_reviews, list):
+            reviews.extend(item for item in direct_reviews if isinstance(item, dict))
+    return reviews
+
+
+def clean_public_review_text(value):
+
+    if not isinstance(value, (str, int, float)):
+        return ""
+
+    text = clean_text(unescape(str(value)))
+    if len(text) < 12 or len(text) > 5000:
+        return ""
+    return text
+
+
+def extract_page_reviews(parser):
+
+    reviews = []
+    seen = set()
+
+    for node in review_objects_from_jsonld(parser.jsonld):
+        text = clean_public_review_text(
+            node.get("reviewBody")
+            or node.get("description")
+            or node.get("text")
+        )
+        if not text:
+            continue
+
+        rating_data = node.get("reviewRating", {})
+        rating_value = (
+            rating_data.get("ratingValue", "")
+            if isinstance(rating_data, dict)
+            else ""
+        )
+        item = {
+            "text": text[:1200],
+            "length": len(text),
+            "title": clean_text(node.get("name", ""))[:180],
+            "rating": clean_text(rating_value)[:20],
+            "date": normalized_listing_date(node.get("datePublished")),
+        }
+        key = (normalize_fact(text), item["date"], normalize_fact(item["title"]))
+        if key in seen:
+            continue
+        seen.add(key)
+        reviews.append(item)
+
+    return reviews[:MARKET_INSIGHTS_MAX_REVIEWS_PER_OFFER]
+
+
+def extract_market_offer_insight(url):
+
+    if not safe_external_url(url):
+        raise ValueError("Invalid public offer URL")
+
+    response = None
+    try:
+        response = requests.get(
+            url,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/140.0.0.0 Safari/537.36"
+                ),
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "ar-EG,ar;q=0.9,en-US;q=0.8,en;q=0.7",
+            },
+            timeout=10,
+            stream=True,
+            allow_redirects=False,
+        )
+        response.raise_for_status()
+        if response.is_redirect:
+            raise ValueError("Offer URL redirected to another page")
+
+        content_type = clean_text(response.headers.get("Content-Type", "")).lower()
+        if content_type and "html" not in content_type:
+            raise ValueError("Offer URL did not return an HTML page")
+
+        body = b""
+        for chunk in response.iter_content(65536):
+            body += chunk
+            if len(body) > 2 * 1024 * 1024:
+                break
+
+        parser = ProductPageParser()
+        parser.feed(body.decode(response.encoding or "utf-8", errors="ignore"))
+        return {
+            "listing_date": extract_offer_listing_date(parser),
+            "reviews": extract_page_reviews(parser),
+        }
+    finally:
+        if response is not None:
+            response.close()
+
+
+def market_insight_sources(raw_sources):
+
+    if not isinstance(raw_sources, list):
+        return []
+
+    sources = []
+    seen_links = set()
+    for raw_source in raw_sources:
+        if not isinstance(raw_source, dict):
+            continue
+        url = clean_text(raw_source.get("link", ""))
+        canonical_url = url.split("#", 1)[0]
+        if not canonical_url or canonical_url in seen_links or not safe_external_url(canonical_url):
+            continue
+        seen_links.add(canonical_url)
+        sources.append({
+            "url": canonical_url,
+            "title": clean_text(raw_source.get("title", "")) or "عرض مشابه",
+            "source": clean_text(raw_source.get("source", "")) or get_domain(canonical_url) or "متجر",
+        })
+
+    # Give separate marketplaces priority when a Lens result contains many
+    # offers from the same source, then continue with the remaining offers.
+    by_domain, remaining, seen_domains = [], [], set()
+    for source in sources:
+        domain = get_domain(source["url"])
+        if domain and domain not in seen_domains:
+            seen_domains.add(domain)
+            by_domain.append(source)
+        else:
+            remaining.append(source)
+    return (by_domain + remaining)[:MARKET_INSIGHTS_MAX_OFFERS]
+
+
+def build_market_analysis_insights(raw_sources):
+
+    sources = market_insight_sources(raw_sources)
+    total_offer_count = len(raw_sources) if isinstance(raw_sources, list) else 0
+    source_details = {}
+
+    if sources:
+        worker_count = min(4, len(sources))
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = {
+                executor.submit(extract_market_offer_insight, source["url"]): index
+                for index, source in enumerate(sources)
+            }
+            for future in as_completed(futures):
+                index = futures[future]
+                try:
+                    source_details[index] = future.result()
+                except Exception:
+                    source_details[index] = None
+
+    dated_offers = []
+    reviews = []
+    readable_offer_count = 0
+    for index, source in enumerate(sources):
+        detail = source_details.get(index)
+        if not detail:
+            continue
+        readable_offer_count += 1
+        listing_date = detail.get("listing_date")
+        if listing_date:
+            dated_offers.append({
+                **source,
+                **listing_date,
+            })
+        for review in detail.get("reviews", []):
+            reviews.append({
+                **review,
+                "source": source["source"],
+                "offer_title": source["title"],
+                "link": source["url"],
+            })
+
+    dated_offers.sort(
+        key=lambda item: (item["date"], normalize_fact(item["source"]), normalize_fact(item["title"]))
+    )
+    reviews.sort(
+        key=lambda item: (-item["length"], normalize_fact(item["source"]), item.get("date", ""), normalize_fact(item["text"]))
+    )
+
+    return {
+        "timeline": {
+            "first": dated_offers[0] if dated_offers else None,
+            "last": dated_offers[-1] if dated_offers else None,
+            "available_count": len(dated_offers),
+        },
+        "reviews": reviews[:MARKET_INSIGHTS_MAX_REVIEWS],
+        "checked_offer_count": len(sources),
+        "total_offer_count": total_offer_count,
+        "readable_offer_count": readable_offer_count,
+    }
 
 
 def listing_image_values(value):

@@ -75,6 +75,16 @@
         </div>
         <div id="resultsGrid" class="products-grid"></div>
     </section>
+
+    <section id="marketInsightsSection" class="market-insights" style="display:none" aria-live="polite">
+        <div class="section-title">
+            <div>
+                <h2>تاريخ العروض وآراء العملاء</h2>
+                <p>من المعلومات العلنية الظاهرة في صفحات العروض القابلة للقراءة فقط.</p>
+            </div>
+        </div>
+        <div id="marketInsightsContent"></div>
+    </section>
 </main>
 
 <script src="{{ static_asset_url('upload.js') }}"></script>
@@ -92,11 +102,14 @@ const closestProduct = document.getElementById("closestProduct");
 const resultsSection = document.getElementById("resultsSection");
 const resultsGrid = document.getElementById("resultsGrid");
 const resultCount = document.getElementById("resultCount");
+const marketInsightsSection = document.getElementById("marketInsightsSection");
+const marketInsightsContent = document.getElementById("marketInsightsContent");
 const RESULT_CACHE_TTL_MS = 60 * 60 * 1000;
 const RESULT_CACHE_PREFIX = "zahed-hand:market-analysis:v1:";
 
 let selectedFile = null;
 let previewUrl = "";
+let marketInsightRequestId = 0;
 
 function resultCacheKey(file) {
     return `${RESULT_CACHE_PREFIX}${file.name}:${file.size}:${file.lastModified}`;
@@ -226,6 +239,11 @@ function renderResults(data) {
     renderOfferCards(Array.isArray(data.results) ? data.results : []);
     resultCount.textContent = `${data.count} عرض`;
     resultsSection.style.display = "block";
+    if (data.insights) {
+        renderMarketInsights(data.insights);
+    } else {
+        loadMarketInsights(data);
+    }
 }
 
 function renderClosest(product) {
@@ -266,13 +284,102 @@ function renderOfferCards(products) {
     }).join("");
 }
 
+async function loadMarketInsights(data) {
+    const requestId = ++marketInsightRequestId;
+    marketInsightsSection.style.display = "block";
+    marketInsightsContent.innerHTML = `<div class="market-insights-loading"><div class="loader"></div><strong>بنقرأ تواريخ العروض وآراء العملاء الظاهرة...</strong><span>نتيجة الأسعار جاهزة بالفعل، والقراءة دي لا تغيّر ترتيبها.</span></div>`;
+
+    try {
+        const response = await fetch("/api/market-analysis/insights", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({offers: Array.isArray(data.results) ? data.results : []}),
+        });
+        const insights = await response.json();
+        if (!response.ok || !insights.success) throw new Error();
+        if (requestId !== marketInsightRequestId) return;
+
+        data.insights = insights;
+        cacheResultFor(selectedFile, data);
+        renderMarketInsights(insights);
+    } catch (_) {
+        if (requestId !== marketInsightRequestId) return;
+        marketInsightsContent.innerHTML = `<div class="market-insights-empty"><strong>الأسعار ظاهرة، لكن تعذر قراءة التواريخ وآراء العملاء الآن.</strong><span>جرّب التحليل مرة أخرى لاحقًا؛ لن يؤثر ذلك على نتائج الأسعار الحالية.</span></div>`;
+    }
+}
+
+function renderMarketInsights(data) {
+    const timeline = data.timeline || {};
+    const firstOffer = timeline.first || null;
+    const lastOffer = timeline.last || null;
+    const reviews = Array.isArray(data.reviews) ? data.reviews : [];
+    const checked = Number(data.checked_offer_count || 0);
+    const total = Number(data.total_offer_count || 0);
+    const readable = Number(data.readable_offer_count || 0);
+    const checkedText = total > checked
+        ? `تمت محاولة قراءة ${checked} من أصل ${total} عروض ظاهرة.`
+        : `تمت محاولة قراءة ${checked} عروض ظاهرة.`;
+    const readableText = readable
+        ? `نجحت قراءة ${readable} صفحة عرض.`
+        : "لم تُتح صفحة عرض قابلة للقراءة.";
+
+    marketInsightsSection.style.display = "block";
+    marketInsightsContent.innerHTML = `
+        <div class="market-insights-note">${escapeHTML(checkedText)} ${escapeHTML(readableText)}</div>
+        <div class="offer-timeline-grid">
+            ${renderOfferDateCard("أول عرض ظاهر", firstOffer, "first")}
+            ${renderOfferDateCard("آخر عرض ظاهر", lastOffer, "last")}
+        </div>
+        <section class="customer-reviews-panel">
+            <div class="customer-reviews-heading">
+                <div>
+                    <span class="insight-kicker">آراء العملاء المكتوبة</span>
+                    <h3>مرتبة من الرأي الأطول للأقصر</h3>
+                </div>
+                <span class="review-total">${reviews.length} رأي ظاهر</span>
+            </div>
+            ${reviews.length ? `<ol class="customer-review-list">${reviews.map(renderCustomerReview).join("")}</ol>` : `<div class="market-insights-empty"><strong>لم تظهر آراء مكتوبة قابلة للقراءة في الصفحات التي استطعنا الوصول إليها.</strong><span>المنصات التي تخفي الآراء أو تمنع قراءتها لا نعرض عنها أي استنتاج.</span></div>`}
+        </section>
+    `;
+}
+
+function renderOfferDateCard(label, offer, type) {
+    if (!offer) {
+        return `<article class="offer-date-card ${type}"><span>${escapeHTML(label)}</span><strong>غير متاح</strong><p>لم يظهر تاريخ إتاحة موثوق في صفحات العروض المقروءة.</p></article>`;
+    }
+
+    const link = safeOfferUrl(offer.url);
+    return `<article class="offer-date-card ${type}">
+        <span>${escapeHTML(label)}</span>
+        <strong>${escapeHTML(offer.date || "غير متاح")}</strong>
+        <small>${escapeHTML(offer.label || "تاريخ العرض الظاهر")}</small>
+        <p>${link ? `<a href="${escapeAttribute(link)}" target="_blank" rel="noopener noreferrer">${escapeHTML(offer.title || "عرض مشابه")}</a>` : escapeHTML(offer.title || "عرض مشابه")}</p>
+        <em>${escapeHTML(offer.source || "متجر")}</em>
+    </article>`;
+}
+
+function renderCustomerReview(review) {
+    const details = [review.source || "متجر", review.date || "تاريخ غير ظاهر"];
+    if (review.rating) details.push(`${review.rating}/5`);
+    details.push(`${Number(review.length || 0)} حرف`);
+    const link = safeOfferUrl(review.link);
+    return `<li class="customer-review">
+        <div class="customer-review-meta"><span>${escapeHTML(details.join(" · "))}</span>${link ? `<a href="${escapeAttribute(link)}" target="_blank" rel="noopener noreferrer">فتح العرض</a>` : ""}</div>
+        ${review.title ? `<h4>${escapeHTML(review.title)}</h4>` : ""}
+        <p>${escapeHTML(review.text || "")}</p>
+    </li>`;
+}
+
 function clearResults() {
+    marketInsightRequestId += 1;
     statusBox.innerHTML = "";
     statsSection.style.display = "none";
     closestSection.style.display = "none";
     resultsSection.style.display = "none";
+    marketInsightsSection.style.display = "none";
     closestProduct.innerHTML = "";
     resultsGrid.innerHTML = "";
+    marketInsightsContent.innerHTML = "";
     resultCount.textContent = "";
 }
 
