@@ -4382,7 +4382,7 @@ def image_generation_error_message(error):
     if error.status_code == 403:
         return "حساب OpenAI المستخدم لا يملك صلاحية توليد الصور حاليًا."
     if error.status_code == 429:
-        if error.error_code in {"insufficient_quota", "billing_hard_limit_reached"}:
+        if is_insufficient_image_quota(error):
             return "رصيد OpenAI API غير كافٍ لتوليد الصور الآن."
         if error.error_code == "rate_limit_exceeded":
             return "تم الوصول إلى حد توليد الصور مؤقتًا. انتظر دقيقة ثم أعد المحاولة."
@@ -4394,15 +4394,30 @@ def image_generation_error_message(error):
     return "فشل إنشاء الصورة. حاول إعادة إنشائها."
 
 
+def is_insufficient_image_quota(error):
+
+    details = " ".join((
+        error.error_code,
+        error.error_type,
+        error.message,
+    )).lower()
+    quota_markers = (
+        "insufficient_quota",
+        "billing_hard_limit_reached",
+        "current quota",
+        "insufficient quota",
+        "billing",
+        "credit balance",
+    )
+    return any(marker in details for marker in quota_markers)
+
+
 def should_stop_image_batch(error):
 
     return (
         error.status_code in (401, 403)
-        or error.error_code in {
-            "insufficient_quota",
-            "billing_hard_limit_reached",
-            "rate_limit_exceeded",
-        }
+        or is_insufficient_image_quota(error)
+        or error.error_code == "rate_limit_exceeded"
     )
 
 
