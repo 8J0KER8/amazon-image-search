@@ -83,6 +83,7 @@ def set_cache_headers(response):
         "/",
         "/analysis",
         "/creation",
+        "/product-images",
         "/market-analysis",
         "/listing-review"
     } and response.status_code == 200:
@@ -122,6 +123,7 @@ ANALYSIS_CACHE_MAX_ITEMS = 32
 MARKET_INSIGHTS_MAX_OFFERS = 12
 MARKET_INSIGHTS_MAX_REVIEWS = 40
 MARKET_INSIGHTS_MAX_REVIEWS_PER_OFFER = 8
+PRODUCT_IMAGE_RESEARCH_MAX_SOURCES = 5
 _analysis_result_cache = {}
 
 
@@ -1708,6 +1710,14 @@ def listing_review_page():
     )
 
 
+@app.route("/product-images")
+def product_images_page():
+
+    return render_template(
+        "product_images.html"
+    )
+
+
 # =========================================================
 # IMAGE SEARCH API
 # =========================================================
@@ -2825,6 +2835,224 @@ def extract_product_facts(url):
                         facts[label] = cleaned
     blocked = ("brand", "manufacturer", "seller", "store", "company", "ماركة", "الشركة", "المصنع")
     return {key: value for key, value in facts.items() if is_valid_product_value(key, value) and not any(word in normalize_fact(value) for word in blocked)}
+
+
+def product_image_research_source(result):
+
+    url = clean_text(result.get("link", ""))
+    title = clean_text(result.get("title", ""))
+    facts = clean_creation_facts(semantic_title_facts(title))
+
+    if url and safe_external_url(url):
+        try:
+            page_facts = semanticize_facts(title, extract_product_facts(url))
+            facts.update(page_facts)
+        except Exception:
+            pass
+
+    return {
+        "title": title or "عرض مشابه",
+        "source": clean_text(result.get("source", "")) or get_domain(url) or "متجر",
+        "link": url,
+        "facts": clean_creation_facts(facts),
+    }
+
+
+def research_product_image_sources(results):
+
+    candidates = []
+    seen_links = set()
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        link = clean_text(result.get("link", ""))
+        canonical_link = link.split("#", 1)[0]
+        if not canonical_link or canonical_link in seen_links:
+            continue
+        seen_links.add(canonical_link)
+        candidates.append(result)
+        if len(candidates) >= PRODUCT_IMAGE_RESEARCH_MAX_SOURCES:
+            break
+
+    if not candidates:
+        return []
+
+    sources = [None] * len(candidates)
+    with ThreadPoolExecutor(max_workers=min(3, len(candidates))) as executor:
+        futures = {
+            executor.submit(product_image_research_source, result): index
+            for index, result in enumerate(candidates)
+        }
+        for future in as_completed(futures):
+            try:
+                sources[futures[future]] = future.result()
+            except Exception:
+                continue
+    return [source for source in sources if source]
+
+
+def merge_product_image_facts(sources):
+
+    values = {}
+    for source in sources:
+        for key, value in source.get("facts", {}).items():
+            normalized = normalize_fact(value)
+            if not normalized:
+                continue
+            entry = values.setdefault(key, {}).setdefault(
+                normalized,
+                {"value": value, "sources": []}
+            )
+            if source["source"] not in entry["sources"]:
+                entry["sources"].append(source["source"])
+
+    merged = {}
+    for key, options in values.items():
+        winner = sorted(
+            options.values(),
+            key=lambda item: (-len(item["sources"]), normalize_fact(item["value"]))
+        )[0]
+        merged[key] = winner
+    return merged
+
+
+def product_image_fact_values(facts):
+
+    return {
+        key: clean_text(value.get("value", ""))
+        for key, value in facts.items()
+        if isinstance(value, dict) and clean_text(value.get("value", ""))
+    }
+
+
+def build_product_image_plan(facts):
+
+    values = product_image_fact_values(facts)
+    fact_summary = "؛ ".join(
+        f"{key}: {value}"
+        for key, value in list(values.items())[:8]
+        if key not in ("اسم المنتج",)
+    ) or "No additional web facts were confirmed."
+    usage = values.get("الاستخدام", "")
+    common = (
+        "Edit the uploaded product reference image. Treat it as the visual source of truth and "
+        "preserve the exact product shape, colors, proportions, visible components, and finish. "
+        f"Use only these confirmed facts when applicable: {fact_summary}. "
+        "Do not add a brand, logo, watermark, written text, unsupported accessories, measurements, "
+        "claims, or product features not visible in the reference or confirmed facts. "
+    )
+    usage_instruction = (
+        f"Show only this confirmed product use: {usage}."
+        if usage else
+        "Use a neutral setting only; do not imply an unconfirmed product use."
+    )
+
+    return [
+        {
+            "title": "1. الصورة الرئيسية",
+            "brief": "منتج واحد فقط على خلفية بيضاء نقية وفق قواعد الصورة الرئيسية في Amazon.",
+            "prompt": common + (
+                "Create a square Amazon main listing image: one complete product only, centered, "
+                "occupying about 85 percent of the frame, on a pure white #FFFFFF background. "
+                "No hands, people, packaging, props, badges, or text."
+            ),
+        },
+        {
+            "title": "2. زاوية أمامية احترافية",
+            "brief": "عرض واضح للمنتج من زاوية أمامية مائلة بدون عناصر إضافية.",
+            "prompt": common + "Create a square secondary listing image with a clean front three-quarter studio angle and a soft neutral background.",
+        },
+        {
+            "title": "3. زاوية جانبية",
+            "brief": "زاوية جانبية توضح شكل المنتج الحقيقي وتفاصيله الظاهرة.",
+            "prompt": common + "Create a square secondary listing image from a controlled side three-quarter angle, showing only authentic visible product construction.",
+        },
+        {
+            "title": "4. زاوية بديلة",
+            "brief": "صورة بديلة من زاوية مختلفة مع الحفاظ على شكل المنتج بالكامل.",
+            "prompt": common + "Create a square premium alternate angle of the exact product in a minimal studio setting, without inventing hidden parts or accessories.",
+        },
+        {
+            "title": "5. تفاصيل التصميم",
+            "brief": "لقطة مقربة للتفاصيل المادية أو التصميمية الظاهرة فقط.",
+            "prompt": common + "Create a square close-up secondary image that highlights only the real visible design, texture, and construction details of the product.",
+        },
+        {
+            "title": "6. منظور علوي",
+            "brief": "منظور علوي مرتب يساعد على فهم الشكل العام للمنتج.",
+            "prompt": common + "Create a square top-down or elevated product view that accurately preserves all visible product proportions and components.",
+        },
+        {
+            "title": "7. وظيفة المنتج",
+            "brief": "شرح بصري بسيط لوظيفة مؤكدة من المعلومات التي تم جمعها.",
+            "prompt": common + "Create a square clean lifestyle secondary image. " + usage_instruction + " Keep the product accurate and do not add unverified actions, people, or accessories.",
+        },
+        {
+            "title": "8. المميزات المؤكدة",
+            "brief": "إبراز بصري للمواصفات التي ظهرت في المصادر، بدون كتابة أو ادعاءات جديدة.",
+            "prompt": common + "Create a square feature-focused product image that visually foregrounds the confirmed facts, with no labels, no text, and no invented claims.",
+        },
+        {
+            "title": "9. الشكل والأبعاد",
+            "brief": "إظهار شكل المنتج ونسبه بصورة واضحة بدون أرقام أو قياسات مخترعة.",
+            "prompt": common + "Create a square product composition that makes the true shape and proportions easy to understand, without numeric dimensions or comparison objects.",
+        },
+        {
+            "title": "10. صورة عرض احترافية",
+            "brief": "صورة ختامية أنيقة مناسبة كصورة ثانوية لعرض المنتج.",
+            "prompt": common + "Create a square polished marketplace secondary image with tasteful neutral lighting and a restrained background, keeping the product fully accurate and dominant.",
+        },
+    ]
+
+
+@app.route("/api/product-images/research", methods=["POST"])
+def api_product_images_research():
+
+    if "image" not in request.files or not request.files["image"].filename:
+        return jsonify({"success": False, "error": "من فضلك اختر صورة المنتج."}), 400
+
+    image_file = request.files["image"]
+    if not allowed_file(image_file.filename):
+        return jsonify({"success": False, "error": "الصيغ المسموحة JPG و PNG و WEBP."}), 400
+    if not SERPAPI_KEY:
+        return jsonify({"success": False, "error": "البحث بالصورة غير متاح حاليًا."}), 503
+
+    temp_path = None
+    try:
+        temp_path = prepare_image(image_file)
+        image_id = upload_image_to_serpapi(temp_path)
+        lens_data = google_lens(image_id, search_type="visual_matches")
+        sources = research_product_image_sources(get_visual_results(lens_data))
+        if not sources:
+            return jsonify({
+                "success": True,
+                "research_available": False,
+                "message": "ملقيناش مصادر كافية للصورة دي. جرّب صورة أوضح للمنتج.",
+            })
+
+        facts = merge_product_image_facts(sources)
+        return jsonify({
+            "success": True,
+            "research_available": True,
+            "facts": facts,
+            "sources": [{
+                "title": source["title"],
+                "source": source["source"],
+                "link": source["link"],
+            } for source in sources],
+            "image_plan": build_product_image_plan(facts),
+            "configured": bool(OPENAI_API_KEY),
+        })
+    except requests.Timeout:
+        return jsonify({"success": False, "error": "البحث أخذ وقتًا أطول من المتوقع. حاول مرة أخرى."}), 504
+    except Exception:
+        return jsonify({"success": False, "error": "حصل خطأ أثناء البحث عن بيانات المنتج. حاول مرة أخرى."}), 500
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
 
 
 class ListingReviewError(Exception):
@@ -4025,8 +4253,13 @@ def api_creation_generate_image():
 
     image_file = request.files["image"]
     prompt = request.form.get("prompt", "")
+    quality = clean_text(request.form.get("quality", "low")).lower()
 
-    if not allowed_file(image_file.filename) or not is_safe_image_prompt(prompt):
+    if (
+        not allowed_file(image_file.filename)
+        or not is_safe_image_prompt(prompt)
+        or quality not in ("low", "medium", "high")
+    ):
         return jsonify({"success": False, "error": "تعذر تجهيز طلب الصورة."}), 400
 
     temp_path = None
@@ -4042,7 +4275,7 @@ def api_creation_generate_image():
                     "model": OPENAI_IMAGE_MODEL,
                     "prompt": clean_text(prompt),
                     "size": "1024x1024",
-                    "quality": "low",
+                    "quality": quality,
                 },
                 files={"image[]": ("product-reference.jpg", reference_image, "image/jpeg")},
                 timeout=180

@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zahed Hand | صور المنتج</title>
+    <link rel="stylesheet" href="{{ static_asset_url('style.css') }}">
+</head>
+<body class="product-images-page">
+<header>
+    <div class="nav-container">
+        <a class="logo" href="/" aria-label="Zahed Hand"><span class="logo-mark">ZH</span><span>Zahed</span><span class="logo-accent">Hand</span></a>
+        <nav>
+            <a href="/">البحث بالصورة</a>
+            <a href="/analysis">تحليل الأسعار</a>
+            <a href="/creation">إنشاء منتج</a>
+            <a href="/product-images" class="active">صور المنتج</a>
+            <a href="/listing-review">تقييم العرض</a>
+            <a href="/market-analysis">كل المتاجر</a>
+        </nav>
+    </div>
+</header>
+
+<main class="container">
+    <section class="hero">
+        <div class="page-badge">استوديو صور Amazon</div>
+        <h1>أنشئ 10 صور احترافية لمنتجك</h1>
+        <p>ارفع صورة المنتج، وسنبحث عن معلوماته الظاهرة على الإنترنت ثم ننشئ صورًا مبنية على الصورة والبيانات التي تم العثور عليها.</p>
+    </section>
+
+    <section class="upload-card product-image-upload">
+        <div id="dropArea" class="drop-area">
+            <div id="uploadPlaceholder">
+                <div class="upload-icon">🖼️</div>
+                <h3>حط صورة المنتج هنا</h3>
+                <p>اضغط هنا أو اسحب الصورة</p>
+                <span>JPG / PNG / WEBP</span>
+            </div>
+            <img id="preview" class="preview" alt="معاينة المنتج">
+        </div>
+        <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+        <div class="buttons">
+            <button id="createButton" class="primary-button" type="button" disabled>ابحث وأنشئ 10 صور</button>
+            <button id="removeButton" class="secondary-button" type="button" style="display:none">شيل الصورة</button>
+        </div>
+        <p class="product-images-note">سيتم تنفيذ بحث بصري واحد ثم إنشاء 10 صور. راجع كل صورة قبل نشرها على Amazon.</p>
+    </section>
+
+    <div id="status" class="status" aria-live="polite"></div>
+
+    <section id="researchSection" class="product-research" hidden>
+        <div class="section-title">
+            <div>
+                <h2>بيانات المنتج التي تم جمعها</h2>
+                <p>نستخدم فقط المعلومات الظاهرة من مصادر مشابهة للصورة، ولا نضيف علامة تجارية أو مواصفات غير مؤكدة.</p>
+            </div>
+        </div>
+        <div id="factsGrid" class="product-facts-grid"></div>
+        <details id="sourcesBox" class="product-image-sources"></details>
+    </section>
+
+    <section id="imagesSection" class="product-image-results" hidden>
+        <div class="section-title">
+            <div>
+                <h2>صور المنتج</h2>
+                <p>الصورة الأولى مصممة كصورة رئيسية بخلفية بيضاء؛ باقي الصور تشرح المنتج من زوايا وسياقات مختلفة.</p>
+            </div>
+            <div id="imageProgress" class="result-count"></div>
+        </div>
+        <div id="imagesGrid" class="product-image-grid"></div>
+        <div class="product-image-review-note"><strong>مراجعة قبل النشر:</strong> تحقق من أن المنتج وشكله ولونه وكل عنصر داخل الصورة مطابق للمنتج الحقيقي قبل رفعها إلى Amazon.</div>
+    </section>
+</main>
+
+<script src="{{ static_asset_url('upload.js') }}"></script>
+<script>
+const dropArea = document.getElementById("dropArea");
+const fileInput = document.getElementById("fileInput");
+const preview = document.getElementById("preview");
+const uploadPlaceholder = document.getElementById("uploadPlaceholder");
+const createButton = document.getElementById("createButton");
+const removeButton = document.getElementById("removeButton");
+const statusBox = document.getElementById("status");
+const researchSection = document.getElementById("researchSection");
+const factsGrid = document.getElementById("factsGrid");
+const sourcesBox = document.getElementById("sourcesBox");
+const imagesSection = document.getElementById("imagesSection");
+const imagesGrid = document.getElementById("imagesGrid");
+const imageProgress = document.getElementById("imageProgress");
+
+let selectedFile = null;
+let workingImage = null;
+let previewUrl = "";
+let imagePlan = [];
+let generationRun = 0;
+
+dropArea.addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", () => {
+    if (fileInput.files.length) setFile(fileInput.files[0]);
+});
+dropArea.addEventListener("dragover", event => {
+    event.preventDefault();
+    dropArea.classList.add("dragover");
+});
+dropArea.addEventListener("dragleave", () => dropArea.classList.remove("dragover"));
+dropArea.addEventListener("drop", event => {
+    event.preventDefault();
+    dropArea.classList.remove("dragover");
+    if (event.dataTransfer.files.length) setFile(event.dataTransfer.files[0]);
+});
+
+function setFile(file) {
+    if (!file.type.startsWith("image/")) {
+        showError("اختار صورة صحيحة للمنتج.");
+        return;
+    }
+    generationRun += 1;
+    selectedFile = file;
+    workingImage = null;
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = URL.createObjectURL(file);
+    preview.src = previewUrl;
+    preview.style.display = "block";
+    uploadPlaceholder.style.display = "none";
+    createButton.disabled = false;
+    removeButton.style.display = "inline-block";
+    clearResults();
+}
+
+removeButton.addEventListener("click", event => {
+    event.stopPropagation();
+    generationRun += 1;
+    selectedFile = null;
+    workingImage = null;
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = "";
+    fileInput.value = "";
+    preview.src = "";
+    preview.style.display = "none";
+    uploadPlaceholder.style.display = "block";
+    createButton.disabled = true;
+    removeButton.style.display = "none";
+    clearResults();
+});
+
+createButton.addEventListener("click", async () => {
+    if (!selectedFile) return;
+    const runId = ++generationRun;
+    clearResults();
+    createButton.disabled = true;
+    statusBox.innerHTML = '<div class="loading-box"><div class="loader"></div><strong>بنبحث عن معلومات المنتج من المصادر المشابهة...</strong><span>بعد البحث هننشئ الصور العشر تلقائيًا.</span></div>';
+
+    try {
+        workingImage = typeof optimizeImageForUpload === "function"
+            ? await optimizeImageForUpload(selectedFile)
+            : selectedFile;
+        if (runId !== generationRun) return;
+
+        const formData = new FormData();
+        formData.append("image", workingImage, selectedFile.name);
+        const response = await fetch("/api/product-images/research", {method: "POST", body: formData});
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || "حصل خطأ أثناء البحث عن بيانات المنتج.");
+        if (runId !== generationRun) return;
+        if (!data.research_available) {
+            showError(data.message || "ملقيناش مصادر كافية للصورة دي.");
+            return;
+        }
+
+        imagePlan = Array.isArray(data.image_plan) ? data.image_plan.slice(0, 10) : [];
+        renderResearch(data);
+        renderImageCards();
+        if (imagePlan.length !== 10) throw new Error("تعذر تجهيز خطة الصور كاملة.");
+        if (!data.configured) {
+            showError("تم البحث عن بيانات المنتج، لكن إنشاء الصور يحتاج ضبط OPENAI_API_KEY في إعدادات الموقع.");
+            return;
+        }
+
+        statusBox.innerHTML = '<div class="loading-box"><div class="loader"></div><strong>بننشئ 10 صور للمنتج...</strong><span>هتظهر كل صورة فور ما تجهز.</span></div>';
+        await generateAllImages(runId);
+    } catch (error) {
+        if (runId === generationRun) showError(error.message || "حصل خطأ أثناء تجهيز صور المنتج.");
+    } finally {
+        if (runId === generationRun) createButton.disabled = false;
+    }
+});
+
+function renderResearch(data) {
+    const facts = data.facts && typeof data.facts === "object" ? data.facts : {};
+    researchSection.hidden = false;
+    factsGrid.innerHTML = Object.keys(facts).length
+        ? Object.entries(facts).map(([label, item]) => {
+            const sources = Array.isArray(item.sources) ? item.sources : [];
+            return `<article class="product-fact-card"><span>${escapeHTML(label)}</span><strong>${escapeHTML(item.value || "")}</strong><small>ظهر في ${sources.length || 1} مصدر</small></article>`;
+        }).join("")
+        : '<div class="product-image-empty">لقينا مصادر مشابهة للصورة، لكن لم تظهر خصائص منظمة يمكن الاعتماد عليها. سيظل المنتج المرجعي هو الصورة التي رفعتها.</div>';
+
+    const sources = Array.isArray(data.sources) ? data.sources : [];
+    sourcesBox.innerHTML = `<summary>المصادر التي تم الرجوع إليها (${sources.length})</summary><ul>${sources.map(source => {
+        const link = safeOfferUrl(source.link);
+        const title = escapeHTML(source.title || "عرض مشابه");
+        const store = escapeHTML(source.source || "متجر");
+        return `<li>${link ? `<a href="${escapeAttribute(link)}" target="_blank" rel="noopener noreferrer">${title}</a>` : title} <span>${store}</span></li>`;
+    }).join("")}</ul>`;
+}
+
+function renderImageCards() {
+    imagesSection.hidden = false;
+    imageProgress.textContent = `0 من ${imagePlan.length} صور`;
+    imagesGrid.innerHTML = imagePlan.map((item, index) => `<article class="generated-product-card" data-image-card="${index}">
+        <div class="generated-product-card-heading"><span class="image-number">${index + 1}</span><div><h3>${escapeHTML(item.title || "صورة المنتج")}</h3><p>${escapeHTML(item.brief || "")}</p></div></div>
+        <div class="generated-product-preview"><span>في الانتظار</span></div>
+        <div class="generated-product-actions"><span class="image-status ready-status">في الانتظار</span><button class="secondary-button regenerate-button" data-regenerate="${index}" type="button" disabled>إعادة إنشاء</button></div>
+    </article>`).join("");
+    imagesGrid.querySelectorAll("[data-regenerate]").forEach(button => button.addEventListener("click", () => generateOneImage(Number(button.dataset.regenerate), generationRun)));
+}
+
+async function generateAllImages(runId) {
+    let complete = 0;
+    for (let index = 0; index < imagePlan.length; index += 1) {
+        if (runId !== generationRun) return;
+        await generateOneImage(index, runId);
+        complete += 1;
+        imageProgress.textContent = `${complete} من ${imagePlan.length} صور`;
+    }
+    if (runId === generationRun) {
+        const failed = imagesGrid.querySelectorAll(".failed-status").length;
+        statusBox.innerHTML = failed
+            ? `<div class="warning-box">اكتمل الإنشاء مع تعذر ${failed} صورة. تقدر تعيد إنشاء أي صورة منها.</div>`
+            : '<div class="success-box">تم إنشاء 10 صور. راجعها قبل النشر على Amazon.</div>';
+    }
+}
+
+async function generateOneImage(index, runId) {
+    if (!workingImage || !imagePlan[index] || runId !== generationRun) return false;
+    const card = imagesGrid.querySelector(`[data-image-card="${index}"]`);
+    if (!card) return false;
+    const status = card.querySelector(".image-status");
+    const previewBox = card.querySelector(".generated-product-preview");
+    const button = card.querySelector("[data-regenerate]");
+    button.disabled = true;
+    status.textContent = "جاري الإنشاء";
+    status.className = "image-status generating-status";
+    previewBox.innerHTML = '<div class="loader"></div>';
+
+    try {
+        const formData = new FormData();
+        formData.append("image", workingImage, selectedFile ? selectedFile.name : "product.jpg");
+        formData.append("prompt", imagePlan[index].prompt || "");
+        formData.append("quality", "medium");
+        const response = await fetch("/api/creation/images/generate", {method: "POST", body: formData});
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || "تعذر إنشاء الصورة.");
+        if (runId !== generationRun) return false;
+
+        previewBox.innerHTML = "";
+        const image = document.createElement("img");
+        image.src = data.image_url;
+        image.alt = imagePlan[index].title || "صورة المنتج";
+        const download = document.createElement("a");
+        download.href = data.image_url;
+        download.download = `zahed-hand-product-${index + 1}.png`;
+        download.textContent = "تحميل الصورة";
+        download.className = "download-image-link";
+        previewBox.append(image, download);
+        status.textContent = "جاهزة للمراجعة";
+        status.className = "image-status review-status";
+        button.disabled = false;
+        return true;
+    } catch (error) {
+        if (runId === generationRun) {
+            previewBox.innerHTML = '<span>تعذر إنشاء الصورة</span>';
+            status.textContent = "تعذر الإنشاء";
+            status.className = "image-status failed-status";
+            button.disabled = false;
+        }
+        return false;
+    }
+}
+
+function clearResults() {
+    statusBox.innerHTML = "";
+    researchSection.hidden = true;
+    imagesSection.hidden = true;
+    factsGrid.innerHTML = "";
+    sourcesBox.innerHTML = "";
+    imagesGrid.innerHTML = "";
+    imageProgress.textContent = "";
+    imagePlan = [];
+}
+
+function safeOfferUrl(value) {
+    try {
+        const url = new URL(String(value || ""));
+        return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+    } catch (_) {
+        return "";
+    }
+}
+
+function showError(message) {
+    statusBox.innerHTML = `<div class="error-box">${escapeHTML(message)}</div>`;
+}
+
+function escapeHTML(value) {
+    const element = document.createElement("div");
+    element.textContent = value === null || value === undefined ? "" : String(value);
+    return element.innerHTML;
+}
+
+function escapeAttribute(value) {
+    return String(value || "").replace(/[&<>'"]/g, character => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
+    })[character]);
+}
+</script>
+</body>
+</html>
