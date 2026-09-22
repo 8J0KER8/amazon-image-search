@@ -219,9 +219,14 @@ async function generateAllImages(runId) {
     let complete = 0;
     for (let index = 0; index < imagePlan.length; index += 1) {
         if (runId !== generationRun) return;
-        await generateOneImage(index, runId);
+        const result = await generateOneImage(index, runId);
         complete += 1;
         imageProgress.textContent = `${complete} من ${imagePlan.length} صور`;
+        if (result.stopBatch) {
+            pausePendingImageCards(index + 1);
+            statusBox.innerHTML = `<div class="warning-box">تم إيقاف بقية الصور حتى لا تتكرر طلبات غير ناجحة. ${escapeHTML(result.error || "أعد المحاولة بعد معالجة سبب التوقف.")}</div>`;
+            return;
+        }
     }
     if (runId === generationRun) {
         const failed = imagesGrid.querySelectorAll(".failed-status").length;
@@ -231,10 +236,25 @@ async function generateAllImages(runId) {
     }
 }
 
+function pausePendingImageCards(startIndex) {
+    for (let index = startIndex; index < imagePlan.length; index += 1) {
+        const card = imagesGrid.querySelector(`[data-image-card="${index}"]`);
+        if (!card) continue;
+        const status = card.querySelector(".image-status");
+        const previewBox = card.querySelector(".generated-product-preview");
+        const button = card.querySelector("[data-regenerate]");
+        if (!status || status.classList.contains("review-status") || status.classList.contains("failed-status")) continue;
+        previewBox.innerHTML = '<span>تم إيقاف التوليد مؤقتًا</span>';
+        status.textContent = "لم يبدأ";
+        status.className = "image-status ready-status";
+        button.disabled = false;
+    }
+}
+
 async function generateOneImage(index, runId) {
-    if (!workingImage || !imagePlan[index] || runId !== generationRun) return false;
+    if (!workingImage || !imagePlan[index] || runId !== generationRun) return {success: false, stopBatch: false};
     const card = imagesGrid.querySelector(`[data-image-card="${index}"]`);
-    if (!card) return false;
+    if (!card) return {success: false, stopBatch: false};
     const status = card.querySelector(".image-status");
     const previewBox = card.querySelector(".generated-product-preview");
     const button = card.querySelector("[data-regenerate]");
@@ -250,8 +270,12 @@ async function generateOneImage(index, runId) {
         formData.append("quality", "medium");
         const response = await fetch("/api/creation/images/generate", {method: "POST", body: formData});
         const data = await response.json();
-        if (!response.ok || !data.success) throw new Error(data.error || "تعذر إنشاء الصورة.");
-        if (runId !== generationRun) return false;
+        if (!response.ok || !data.success) {
+            const requestError = new Error(data.error || "تعذر إنشاء الصورة.");
+            requestError.stopBatch = Boolean(data.stop_batch);
+            throw requestError;
+        }
+        if (runId !== generationRun) return {success: false, stopBatch: false};
 
         previewBox.innerHTML = "";
         const image = document.createElement("img");
@@ -266,7 +290,7 @@ async function generateOneImage(index, runId) {
         status.textContent = "جاهزة للمراجعة";
         status.className = "image-status review-status";
         button.disabled = false;
-        return true;
+        return {success: true, stopBatch: false};
     } catch (error) {
         if (runId === generationRun) {
             previewBox.innerHTML = '<span>تعذر إنشاء الصورة</span>';
@@ -274,7 +298,11 @@ async function generateOneImage(index, runId) {
             status.className = "image-status failed-status";
             button.disabled = false;
         }
-        return false;
+        return {
+            success: false,
+            stopBatch: Boolean(error.stopBatch),
+            error: error.message || "تعذر إنشاء الصورة."
+        };
     }
 }
 

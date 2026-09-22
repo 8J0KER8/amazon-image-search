@@ -4263,7 +4263,12 @@ class ImageGenerationRequestError(Exception):
 
 def image_generation_models():
 
-    models = (OPENAI_IMAGE_MODEL, "gpt-image-1.5", "gpt-image-1")
+    models = (
+        OPENAI_IMAGE_MODEL,
+        "gpt-image-1.5",
+        "gpt-image-1-mini",
+        "gpt-image-1"
+    )
     seen = set()
 
     for model in models:
@@ -4311,6 +4316,24 @@ def is_unavailable_image_model(response):
     )
 
 
+def is_rate_limited_image_model(response):
+
+    if response is None or response.status_code != 429:
+        return False
+
+    try:
+        error = (response.json() or {}).get("error", {})
+    except ValueError:
+        error = {}
+
+    if not isinstance(error, dict):
+        return False
+
+    code = clean_text(error.get("code", "")).lower()
+    message = clean_text(error.get("message", "")).lower()
+    return code == "rate_limit_exceeded" or "rate limit" in message
+
+
 def request_openai_product_image(temp_path, prompt, quality):
 
     last_response = None
@@ -4337,9 +4360,12 @@ def request_openai_product_image(temp_path, prompt, quality):
                 return response.json()
 
             last_response = response
-            if is_unavailable_image_model(response):
+            if (
+                is_unavailable_image_model(response)
+                or is_rate_limited_image_model(response)
+            ):
                 app.logger.warning(
-                    "OpenAI image model unavailable; trying fallback model: %s",
+                    "OpenAI image model could not serve the request; trying fallback: %s",
                     model
                 )
                 continue
@@ -4356,12 +4382,28 @@ def image_generation_error_message(error):
     if error.status_code == 403:
         return "حساب OpenAI المستخدم لا يملك صلاحية توليد الصور حاليًا."
     if error.status_code == 429:
+        if error.error_code in {"insufficient_quota", "billing_hard_limit_reached"}:
+            return "رصيد OpenAI API غير كافٍ لتوليد الصور الآن."
+        if error.error_code == "rate_limit_exceeded":
+            return "تم الوصول إلى حد توليد الصور مؤقتًا. انتظر دقيقة ثم أعد المحاولة."
         return "تم الوصول إلى حد الاستخدام أو الرصيد المتاح لتوليد الصور."
     if error.status_code in (400, 404):
         return "تعذر قبول طلب الصورة من خدمة التوليد. جرّب صورة منتج أوضح."
     if error.status_code >= 500:
         return "خدمة توليد الصور غير متاحة مؤقتًا. حاول مرة أخرى بعد قليل."
     return "فشل إنشاء الصورة. حاول إعادة إنشائها."
+
+
+def should_stop_image_batch(error):
+
+    return (
+        error.status_code in (401, 403)
+        or error.error_code in {
+            "insufficient_quota",
+            "billing_hard_limit_reached",
+            "rate_limit_exceeded",
+        }
+    )
 
 
 @app.route("/api/creation/images/generate", methods=["POST"])
@@ -4419,7 +4461,8 @@ def api_creation_generate_image():
         )
         return jsonify({
             "success": False,
-            "error": image_generation_error_message(error)
+            "error": image_generation_error_message(error),
+            "stop_batch": should_stop_image_batch(error),
         }), error.status_code or 502
 
     except Exception:
