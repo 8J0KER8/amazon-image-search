@@ -113,7 +113,7 @@ SERPAPI_SEARCH_URL = "https://serpapi.com/search.json"
 # Optional Phase 5 image-generation integration. Keep the key in the
 # deployment environment only; it is never returned to the browser.
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
-OPENAI_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-2.5-sunburst").strip()
+OPENAI_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "").strip() or "gpt-image-1.5"
 OPENAI_IMAGE_EDITS_URL = "https://api.openai.com/v1/images/edits"
 OPENAI_PRODUCT_MATCH_MODEL = os.getenv("OPENAI_PRODUCT_MATCH_MODEL", "gpt-5.6-luna").strip()
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
@@ -4238,6 +4238,132 @@ def is_safe_image_prompt(prompt):
     return bool(prompt) and len(prompt) <= 3500 and not any(token in prompt.lower() for token in blocked)
 
 
+class ImageGenerationRequestError(Exception):
+
+    def __init__(self, response):
+
+        self.status_code = response.status_code if response is not None else 0
+        self.error_code = ""
+        self.error_type = ""
+        self.message = ""
+
+        if response is not None:
+            try:
+                error = (response.json() or {}).get("error", {})
+            except ValueError:
+                error = {}
+
+            if isinstance(error, dict):
+                self.error_code = clean_text(error.get("code", ""))
+                self.error_type = clean_text(error.get("type", ""))
+                self.message = clean_text(error.get("message", ""))
+
+        super().__init__(self.message or "OpenAI image request failed")
+
+
+def image_generation_models():
+
+    models = (OPENAI_IMAGE_MODEL, "gpt-image-1.5", "gpt-image-1")
+    seen = set()
+
+    for model in models:
+        model = clean_text(model)
+        if model and model not in seen:
+            seen.add(model)
+            yield model
+
+
+def is_unavailable_image_model(response):
+
+    if response is None or response.status_code not in (400, 404):
+        return False
+
+    try:
+        error = (response.json() or {}).get("error", {})
+    except ValueError:
+        error = {}
+
+    if not isinstance(error, dict):
+        return False
+
+    message = clean_text(error.get("message", "")).lower()
+    code = clean_text(error.get("code", "")).lower()
+    model_markers = (
+        "model_not_found",
+        "model_not_available",
+        "unsupported_model",
+    )
+    unavailable_markers = (
+        "does not exist",
+        "not found",
+        "not available",
+        "not supported",
+        "not compatible",
+        "unsupported",
+    )
+
+    return (
+        code in model_markers
+        or (
+            "model" in message
+            and any(marker in message for marker in unavailable_markers)
+        )
+    )
+
+
+def request_openai_product_image(temp_path, prompt, quality):
+
+    last_response = None
+
+    with open(temp_path, "rb") as reference_image:
+        for model in image_generation_models():
+            reference_image.seek(0)
+            response = requests.post(
+                OPENAI_IMAGE_EDITS_URL,
+                headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+                data={
+                    "model": model,
+                    "prompt": clean_text(prompt),
+                    "size": "1024x1024",
+                    "quality": quality,
+                    "background": "opaque",
+                    "output_format": "png",
+                },
+                files={"image": ("product-reference.jpg", reference_image, "image/jpeg")},
+                timeout=180
+            )
+
+            if response.ok:
+                return response.json()
+
+            last_response = response
+            if is_unavailable_image_model(response):
+                app.logger.warning(
+                    "OpenAI image model unavailable; trying fallback model: %s",
+                    model
+                )
+                continue
+
+            raise ImageGenerationRequestError(response)
+
+    raise ImageGenerationRequestError(last_response)
+
+
+def image_generation_error_message(error):
+
+    if error.status_code == 401:
+        return "مفتاح OpenAI غير صالح أو غير مفعّل لتوليد الصور."
+    if error.status_code == 403:
+        return "حساب OpenAI المستخدم لا يملك صلاحية توليد الصور حاليًا."
+    if error.status_code == 429:
+        return "تم الوصول إلى حد الاستخدام أو الرصيد المتاح لتوليد الصور."
+    if error.status_code in (400, 404):
+        return "تعذر قبول طلب الصورة من خدمة التوليد. جرّب صورة منتج أوضح."
+    if error.status_code >= 500:
+        return "خدمة توليد الصور غير متاحة مؤقتًا. حاول مرة أخرى بعد قليل."
+    return "فشل إنشاء الصورة. حاول إعادة إنشائها."
+
+
 @app.route("/api/creation/images/generate", methods=["POST"])
 def api_creation_generate_image():
 
@@ -4266,23 +4392,11 @@ def api_creation_generate_image():
 
     try:
         temp_path = prepare_image(image_file)
-
-        with open(temp_path, "rb") as reference_image:
-            response = requests.post(
-                OPENAI_IMAGE_EDITS_URL,
-                headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
-                data={
-                    "model": OPENAI_IMAGE_MODEL,
-                    "prompt": clean_text(prompt),
-                    "size": "1024x1024",
-                    "quality": quality,
-                },
-                files={"image[]": ("product-reference.jpg", reference_image, "image/jpeg")},
-                timeout=180
-            )
-
-        response.raise_for_status()
-        data = response.json()
+        data = request_openai_product_image(
+            temp_path,
+            prompt,
+            quality
+        )
         image_base64 = (data.get("data") or [{}])[0].get("b64_json", "")
 
         if not image_base64:
@@ -4296,7 +4410,20 @@ def api_creation_generate_image():
     except requests.Timeout:
         return jsonify({"success": False, "error": "إنشاء الصورة أخد وقت أطول من المتوقع. حاول مرة أخرى."}), 504
 
+    except ImageGenerationRequestError as error:
+        app.logger.warning(
+            "OpenAI image generation failed: status=%s code=%s type=%s",
+            error.status_code,
+            error.error_code,
+            error.error_type
+        )
+        return jsonify({
+            "success": False,
+            "error": image_generation_error_message(error)
+        }), error.status_code or 502
+
     except Exception:
+        app.logger.exception("Unexpected OpenAI image generation failure")
         return jsonify({"success": False, "error": "فشل إنشاء الصورة. حاول إعادة إنشائها."}), 500
 
     finally:
